@@ -1,12 +1,12 @@
 from typing import Annotated, cast
 
-from app.usecases.auth import AuthUseCase
 from fastapi import Depends
 from fastapi.requests import Request
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ports import ErrorTrackingPort, SqlDBClientPort
+from app.usecases.auth import AuthUseCase
 from conf import settings
 from domain.schemas import UserSchema
 from entrypoints.api.http.fastapi_.types_ import AsgiApp

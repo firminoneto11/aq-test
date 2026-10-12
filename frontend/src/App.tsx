@@ -89,11 +89,15 @@ function DesktopProtectedPages() {
 
 function Pages() {
   const { user } = useAuth()
+  const location = useLocation()
+  const interview = new URLSearchParams(location.search).get('interview')
+  const authenticatedDestination = interview && z.uuid().safeParse(interview).success
+    ? `/interviews/${encodeURIComponent(interview)}` : '/jobs'
   const desktop = useDesktop()
   return (
     <Routes>
       <Route path="/" element={<Navigate to={user ? '/jobs' : '/login'} replace />} />
-      <Route path="/login" element={desktop ? user ? <Navigate to="/jobs" replace /> : <LoginPage /> : <DesktopRequired />} />
+      <Route path="/login" element={desktop ? user ? <Navigate to={authenticatedDestination} replace /> : <LoginPage /> : <DesktopRequired />} />
       <Route path="/*" element={<ProtectedPages />} />
     </Routes>
   )

@@ -1,122 +1,115 @@
-import { useState } from 'react'
-import heroImg from './assets/hero.png'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
+import { useEffect, useState } from 'react'
+import { Link, Navigate, Route, Routes, useLocation } from 'react-router'
+import { z } from 'zod'
+import { readApiBaseUrl } from './api/config'
+import { AuthProvider } from './auth/AuthProvider'
+import { useAuth } from './auth/auth'
+import AppShell from './components/AppShell'
+import StatusNotice from './components/StatusNotice'
+import { InterviewProvider } from './features/interview/InterviewProvider'
+import { useInterview } from './features/interview/useInterview'
+import InterviewPage from './pages/InterviewPage'
+import JobsPage from './pages/JobsPage'
+import LoginPage from './pages/LoginPage'
 import './App.css'
+function useDesktop() {
+  const [desktop, setDesktop] = useState(() => window.matchMedia('(min-width: 1024px)').matches)
 
-function App() {
-  const [count, setCount] = useState(0)
+  useEffect(() => {
+    const media = window.matchMedia('(min-width: 1024px)')
+    const update = () => setDesktop(media.matches)
+    media.addEventListener('change', update)
+    update()
+    return () => media.removeEventListener('change', update)
+  }, [])
 
+  return desktop
+}
+
+function DesktopRequired() {
+  const { user, logout } = useAuth()
   return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.tsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
-
-      <div className="ticks"></div>
-
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
-
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
+    <div className="desktop-required" role="status">
+      <p className="eyebrow">Desktop experience</p>
+      <h1>Use a desktop to interview</h1>
+      <p>Voice interviews require a browser window at least 1024 pixels wide. Widen this window or return on a laptop or desktop to continue your saved interview.</p>
+      {user && <button className="button button--secondary" type="button" onClick={logout}>Log out</button>}
+    </div>
   )
 }
 
-export default App
+function NotFound() {
+  const { user } = useAuth()
+  return (
+    <AppShell title="Page not found" eyebrow="Wrong turn">
+      <StatusNotice tone="warning" action={<Link to={user ? '/jobs' : '/login'}>Go back</Link>}>
+        This address does not match an available page. Your saved interview has not been changed.
+      </StatusNotice>
+    </AppShell>
+  )
+}
+
+function ProtectedPages() {
+  const { user, api } = useAuth()
+  const location = useLocation()
+  if (!user || !api) {
+    const match = /^\/interviews\/([^/]+)$/.exec(location.pathname)
+    const id = match && z.uuid().safeParse(match[1]).success ? match[1] : null
+    const login = id ? `/login?interview=${encodeURIComponent(id)}` : '/login'
+    return <Navigate to={login} replace />
+  }
+  return (
+    <InterviewProvider key={user.id} api={api} ownerId={user.id}>
+      <DesktopProtectedPages />
+    </InterviewProvider>
+  )
+}
+
+function DesktopProtectedPages() {
+  const desktop = useDesktop()
+  const { controller } = useInterview()
+  useEffect(() => {
+    const media = window.matchMedia('(min-width: 1024px)')
+    const stopOnNarrow = () => {
+      if (!media.matches) controller.leave()
+    }
+    media.addEventListener('change', stopOnNarrow)
+    stopOnNarrow()
+    return () => media.removeEventListener('change', stopOnNarrow)
+  }, [controller])
+  if (!desktop) return <DesktopRequired />
+  return (
+    <Routes>
+      <Route path="jobs" element={<JobsPage />} />
+      <Route path="interviews/:interviewId" element={<InterviewPage />} />
+      <Route path="*" element={<NotFound />} />
+    </Routes>
+  )
+}
+
+function Pages() {
+  const { user } = useAuth()
+  const desktop = useDesktop()
+  return (
+    <Routes>
+      <Route path="/" element={<Navigate to={user ? '/jobs' : '/login'} replace />} />
+      <Route path="/login" element={desktop ? user ? <Navigate to="/jobs" replace /> : <LoginPage /> : <DesktopRequired />} />
+      <Route path="/*" element={<ProtectedPages />} />
+    </Routes>
+  )
+}
+
+export default function App() {
+  let baseUrl: string
+  try {
+    baseUrl = readApiBaseUrl()
+  } catch {
+    return (
+      <div className="config-required" role="alert">
+        <h1>API configuration needed</h1>
+        <p>Set <code>VITE_API_BASE_URL=http://localhost:8000/api/v1</code> when starting the frontend, then reload the page.</p>
+      </div>
+    )
+  }
+  return <AuthProvider baseUrl={baseUrl}><Pages /></AuthProvider>
+}

@@ -27,6 +27,17 @@ function state(overrides: Partial<InterviewState> = {}): InterviewState {
 }
 const transcript: TranscriptResponse = { interview_id: ID, status: 'created', questions: [], messages: [] }
 const evaluation: EvaluationResponse = { status: 'not_ready', result: null, error_code: null, can_retry: false }
+const completedEvaluation: EvaluationResponse = {
+  status: 'completed', result: {
+    strengths: [], concerns: [],
+    rubric_scores: ['ownership', 'api_design', 'data_consistency', 'reliability'].map(topic_id => ({
+      topic_id, score: 0, answer_ids: [],
+    })),
+    overall_score: 0, insufficient_evidence: true,
+    gaps: ['ownership', 'api_design', 'data_consistency', 'reliability'],
+  },
+  error_code: null, can_retry: false,
+}
 const grant: ConnectionGrant = {
   interview_id: ID, run_id: RUN, server_url: 'wss://voice.example', room_name: 'room',
   participant_identity: 'candidate', participant_token: 'secret', expires_at: '2099-01-01T00:00:00+00:00', state: state({ status: 'active' }),
@@ -328,6 +339,52 @@ describe('state authority and terminal commands', () => {
     controller.deactivate()
   })
 
+  it('reconciles finished state after an explicit failed-evaluation retry succeeds', async () => {
+    const { controller, api } = setup()
+    api.getInterview.mockResolvedValue(state({
+      status: 'evaluation_failed', revision: 2, evaluation_status: 'failed',
+      last_error_code: 'evaluation_failed', can_resume: false,
+    }))
+    api.getEvaluation.mockResolvedValue({
+      status: 'failed', result: null, error_code: 'evaluation_failed', can_retry: true,
+    })
+    await controller.open(ID)
+    await controller.loadEvaluation()
+    expect(controller.getSnapshot().evaluation?.can_retry).toBe(true)
+    api.retryEvaluation.mockResolvedValueOnce({ status: 200, data: completedEvaluation })
+    api.getInterview.mockResolvedValue(state({
+      status: 'completed', revision: 3, evaluation_status: 'completed',
+      last_error_code: null, can_resume: false,
+    }))
+    api.getEvaluation.mockResolvedValue(completedEvaluation)
+    await controller.retryEvaluation()
+    expect(api.retryEvaluation).toHaveBeenCalledOnce()
+    await vi.waitFor(() => expect(controller.getSnapshot().state?.status).toBe('completed'))
+    expect(controller.getSnapshot().evaluation?.result?.overall_score).toBe(0)
+    expect(controller.getSnapshot().state?.last_error_code).toBeNull()
+    controller.deactivate()
+  })
+
+  it('refetches finished interview state when evaluation resolves after media loss', async () => {
+    const { controller, api } = setup()
+    api.getInterview.mockResolvedValueOnce(state({
+      status: 'evaluating', revision: 2, evaluation_status: 'running', can_resume: false,
+    }))
+    api.getEvaluation.mockResolvedValueOnce({
+      status: 'running', result: null, error_code: null, can_retry: false,
+    })
+    await controller.open(ID)
+    await controller.loadEvaluation()
+    api.getEvaluation.mockResolvedValueOnce(completedEvaluation)
+    api.getInterview.mockResolvedValueOnce(state({
+      status: 'completed', revision: 3, evaluation_status: 'completed', can_resume: false,
+    }))
+    await controller.loadEvaluation()
+    await vi.waitFor(() => expect(controller.getSnapshot().state?.status).toBe('completed'))
+    expect(controller.getSnapshot().evaluation?.result?.overall_score).toBe(0)
+    controller.deactivate()
+  })
+
   it('completed evaluation without a result is an integration error, never a score', async () => {
     const { controller, api } = setup()
     await controller.open(ID)
@@ -349,6 +406,50 @@ describe('state authority and terminal commands', () => {
     await vi.waitFor(() => expect(controller.getSnapshot().evaluation?.status).toBe('failed'))
     expect(controller.getSnapshot().transcript).not.toBeNull()
     expect(controller.getSnapshot().evaluation?.can_retry).toBe(true)
+    controller.deactivate()
+  })
+
+  it('stops a paused voice run so the saved interview can be resumed deliberately', async () => {
+    const { controller, api, rooms, tracks } = setup()
+    await controller.open(ID)
+    await controller.resume()
+    api.getInterview.mockResolvedValueOnce(state({
+      status: 'paused', revision: 2, last_error_code: 'llm_unavailable', can_resume: true,
+    }))
+    await controller.refresh()
+    expect(tracks[0].stop).toHaveBeenCalled()
+    expect(rooms[0].disconnect).toHaveBeenCalled()
+    expect(controller.getSnapshot()).toMatchObject({ phase: 'disconnected', state: { status: 'paused' } })
+    await controller.resume()
+    expect(api.connectInterview).toHaveBeenCalledTimes(2)
+    expect(rooms).toHaveLength(2)
+    controller.deactivate()
+  })
+
+  it('keeps a paused recovery room until the worker resolves pending input or fails again', async () => {
+    const { controller, api, rooms } = setup()
+    api.getInterview.mockResolvedValueOnce(state({
+      status: 'paused', revision: 2, last_error_code: 'llm_unavailable', can_resume: true,
+    }))
+    await controller.open(ID)
+    api.connectInterview.mockResolvedValueOnce({
+      status: 200, data: { ...grant, state: state({
+        status: 'paused', revision: 3, last_error_code: null, can_resume: true,
+      }) },
+    })
+    await controller.resume()
+    api.getInterview.mockResolvedValueOnce(state({
+      status: 'paused', revision: 3, last_error_code: null, can_resume: true,
+    }))
+    await controller.refresh()
+    expect(rooms[0].disconnect).not.toHaveBeenCalled()
+    expect(controller.getSnapshot().phase).toBe('connected')
+    api.getInterview.mockResolvedValueOnce(state({
+      status: 'paused', revision: 4, last_error_code: 'llm_unavailable', can_resume: true,
+    }))
+    await controller.refresh()
+    expect(rooms[0].disconnect).toHaveBeenCalledOnce()
+    expect(controller.getSnapshot().phase).toBe('disconnected')
     controller.deactivate()
   })
 

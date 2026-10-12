@@ -625,7 +625,13 @@ export class InterviewController {
     if (FINISHED[state.status]) {
       if (this.room && !this.closingStarted) this.finishMedia()
       void this.loadEvaluation()
-    } else if (state.status === 'cancelled' && this.room) this.releaseMedia()
+    } else if (this.room && (
+      state.status === 'cancelled' ||
+      state.status === 'paused' && (
+        previous?.status !== 'paused' ||
+        state.last_error_code !== null && state.last_error_code !== previous.last_error_code
+      )
+    )) this.releaseMedia()
     if (!TERMINAL[state.status]) this.scheduleState()
     else this.clearPollingTimers()
   }
@@ -756,9 +762,13 @@ export class InterviewController {
         if (!this.current(generation, id) || sequence !== this.evaluationSequence) return
         if (evaluation.status === 'completed' && evaluation.result === null)
           throw new Error('Completed evaluation is missing its result')
+        const stateNeedsRefresh =
+          evaluation.status === 'completed' && this.snapshot.state?.status !== 'completed' ||
+          evaluation.status === 'failed' && this.snapshot.state?.status !== 'evaluation_failed'
         this.change({ evaluation, evaluationError: null })
         this.refreshEvaluationSources(evaluation)
         this.scheduleEvaluation()
+        if (stateNeedsRefresh) void this.refresh()
       } catch (error) {
         if (this.current(generation, id) && sequence === this.evaluationSequence) {
           if (this.evaluationTimer !== null) {
@@ -797,6 +807,7 @@ export class InterviewController {
       this.change({ evaluation: response.data })
       this.refreshEvaluationSources(response.data)
       this.scheduleEvaluation()
+      void this.refresh()
     } catch (error) {
       if (!this.current(generation, id)) return
       this.change({ evaluationError: error instanceof Error && error.message === 'Completed evaluation is missing its result'

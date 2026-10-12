@@ -26,4 +26,3 @@ export function InterviewProvider({ children, api, ownerId }: { children: ReactN
     </InterviewContext.Provider>
   )
 }
-

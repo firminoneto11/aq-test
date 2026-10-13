@@ -1,9 +1,11 @@
 from abc import ABCMeta, abstractmethod
+from datetime import datetime
 from typing import (
     Any,
     AsyncContextManager,
     overload,
 )
+from uuid import UUID
 
 from httpx import Response
 from langchain_core.tools import BaseTool
@@ -56,6 +58,24 @@ class SqlDBClientPort(metaclass=ABCMeta):
     ) -> None: ...
 
 
+class VoiceGatewayPort(metaclass=ABCMeta):
+    @abstractmethod
+    async def create_room(self, room_name: str) -> None: ...
+
+    @abstractmethod
+    async def dispatch(
+        self, room_name: str, interview_id: UUID, run_id: UUID
+    ) -> str: ...
+
+    @abstractmethod
+    def issue_token(
+        self, room_name: str, participant_identity: str, expires_at: datetime
+    ) -> str: ...
+
+    @abstractmethod
+    async def close_room(self, room_name: str) -> None: ...
+
+
 class TemplateEnginePort(metaclass=ABCMeta):
     @abstractmethod
     def get_template_text(self, template_name: str) -> str: ...
@@ -79,6 +99,19 @@ class ErrorTrackingPort(metaclass=ABCMeta):
 
     @abstractmethod
     def capture_exception(self, exc: BaseException, /, **context: Any) -> None: ...
+
+
+class PasswordPort(metaclass=ABCMeta):
+    @abstractmethod
+    async def hash_password(self, password: str) -> str: ...
+
+    @abstractmethod
+    async def verify_password(
+        self, password_hash: str | None, password: str
+    ) -> bool: ...
+
+    @abstractmethod
+    def needs_rehash(self, password_hash: str) -> bool: ...
 
 
 class LLMPort(metaclass=ABCMeta):

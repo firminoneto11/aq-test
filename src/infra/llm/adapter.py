@@ -5,6 +5,7 @@ from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_openrouter import ChatOpenRouter
+from openrouter.utils import BackoffStrategy, RetryConfig
 
 from app.ports import LLMPort
 from conf import settings
@@ -59,11 +60,21 @@ class LLMAdapter(LLMPort):
                     **{**thinking_kwarg, **provider_kwargs},
                 )
             case "openrouter":
-                return ChatOpenRouter(
+                provider_kwargs.setdefault("max_retries", 0)
+                client = ChatOpenRouter(
                     model=model,
                     api_key=settings.OPENROUTER_API_KEY,
                     **provider_kwargs,
                 )
+                if client.max_retries == 0:
+                    # The OpenRouter SDK retries for up to an hour when its
+                    # retry_config is UNSET, even if LangChain max_retries is zero.
+                    client.client.sdk_configuration.retry_config = RetryConfig(
+                        strategy="none",
+                        backoff=BackoffStrategy(0, 0, 1, 0),
+                        retry_connection_errors=False,
+                    )
+                return client
 
     @overload
     async def generate_completion(
@@ -136,9 +147,14 @@ class LLMAdapter(LLMPort):
                 runnable = cast(
                     "StructuredModel",
                     model.with_structured_output(
-                        schema=schema_output, method="json_schema", include_raw=True
+                        schema=schema_output,
+                        method="json_schema",
+                        include_raw=True,
+                        **({"strict": True} if self._provider == "openrouter" else {}),
                     ),
-                ).with_retry()
+                )
+                if self._provider != "openrouter":
+                    runnable = runnable.with_retry()
                 result = await runnable.ainvoke(input=messages)
                 await self._log(result["raw"], time.monotonic() - t0)
                 return cast(dict[str, Any], result["parsed"])

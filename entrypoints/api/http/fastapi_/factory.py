@@ -4,9 +4,15 @@ from typing import TYPE_CHECKING, Any, cast
 
 from fastapi import FastAPI
 
+from app.usecases.auth import validate_jwt_settings
+from app.usecases.interviews import InterviewService
+from app.usecases.voice_sessions import VoiceSessionService
 from conf import settings
 from infra.database import SqlDBClientAdapter
 from infra.error_tracking import ErrorTrackingAdapter
+from infra.llm import LLMAdapter
+from infra.passwords import PasswordAdapter
+from infra.voice import LiveKitGateway
 from shared import context, logging
 
 from . import bg_tasks, handlers, middleware, routers, types_
@@ -69,6 +75,47 @@ class ASGIFactory:
         self.application.state.error_tracker = ErrorTrackingAdapter(
             settings.ERROR_TRACKER_BACKEND, **settings.error_tracker_kwargs
         )
+        self.application.state.passwords = PasswordAdapter()
+        if settings.OPENROUTER_API_KEY.get_secret_value():
+            provider_options = {
+                "require_parameters": True,
+                "data_collection": "deny",
+            }
+            planner = LLMAdapter(
+                provider="openrouter",
+                model=settings.INTERVIEW_PLANNER_MODEL,
+                openrouter_provider=provider_options,
+            )
+            evaluator = (
+                planner
+                if settings.INTERVIEW_PLANNER_MODEL == settings.INTERVIEW_LLM_MODEL
+                else LLMAdapter(
+                    provider="openrouter",
+                    model=settings.INTERVIEW_LLM_MODEL,
+                    openrouter_provider=provider_options,
+                )
+            )
+        else:
+            planner = evaluator = None
+        self.application.state.interviews = InterviewService(
+            self.application.state.db, planner, evaluation_llm=evaluator
+        )
+        voice_ready = (
+            planner is not None
+            and bool(settings.LIVEKIT_URL)
+            and bool(settings.LIVEKIT_API_KEY.get_secret_value())
+            and bool(settings.LIVEKIT_API_SECRET.get_secret_value())
+            and bool(settings.DEEPGRAM_API_KEY.get_secret_value())
+            and bool(settings.ELEVEN_API_KEY.get_secret_value())
+        )
+        self.application.state.voice_gateway = LiveKitGateway() if voice_ready else None
+        self.application.state.voice_sessions = VoiceSessionService(
+            self.application.state.db,
+            self.application.state.voice_gateway,
+            server_url=settings.LIVEKIT_URL,
+            max_active=settings.VOICE_MAX_ACTIVE,
+            lease_seconds=settings.VOICE_LEASE_SECONDS,
+        )
         self.application.state.mounted_applications = []
 
     def configure_routers(self):
@@ -99,7 +146,13 @@ class ASGIFactory:
                 app.add_exception_handler(key, value)
 
     def _update_sub_mount_state(self, sub_mount: types_.AsgiApp):
-        state_items = ["db", "error_tracker"]
+        state_items = [
+            "db",
+            "error_tracker",
+            "passwords",
+            "interviews",
+            "voice_sessions",
+        ]
         for item in state_items:
             main_value = getattr(self.application.state, item)
             setattr(sub_mount.state, item, main_value)
@@ -114,6 +167,8 @@ class ASGIFactory:
             await self._on_shutdown(app=app, tasks=tasks)
 
     async def _on_startup(self, app: types_.AsgiApp):
+        if settings.CONNECT_TO_SERVICES_ON_STARTUP:
+            validate_jwt_settings(settings.JWT_SECRET, settings.JWT_ALGORITHM)
         await self._connect_to_services(app=app)
         await self._create_db_tables(app=app)
         return bg_tasks.get_background_tasks(app=app)
@@ -160,6 +215,8 @@ class ASGIFactory:
         await self._disconnect_from_services(app=app)
 
     async def _disconnect_from_services(self, app: types_.AsgiApp):
+        if app.state.voice_gateway is not None:
+            await app.state.voice_gateway.aclose()
         if settings.CONNECT_TO_SERVICES_ON_STARTUP:
             logger = logging.get_logger()
             results = await aio.gather(

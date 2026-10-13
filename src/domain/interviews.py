@@ -4,7 +4,6 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-
 InterviewStatus = Literal[
     "created",
     "active",
@@ -49,7 +48,9 @@ class PackTopic(BaseModel):
             or not skill_id.removeprefix(f"{self.id}.").strip()
             for skill_id in self.skill_ids
         ):
-            raise ValueError("Skill IDs must be nonempty and prefixed with the topic ID")
+            raise ValueError(
+                "Skill IDs must be nonempty and prefixed with the topic ID"
+            )
         if len({question.id for question in self.questions}) != len(self.questions):
             raise ValueError("Bank question IDs must be unique")
         return self
@@ -71,14 +72,18 @@ class RolePack(BaseModel):
             "technical",
             "behavioral",
         ]:
-            raise ValueError("Topics must follow behavioral, technical, technical, behavioral order")
+            raise ValueError(
+                "Topics must follow behavioral, technical, technical, behavioral order"
+            )
         if self.topics[0].id != "ownership":
             raise ValueError("The first topic must be ownership")
         if sum(topic.weight for topic in self.topics) != 100:
             raise ValueError("Topic weights must total 100")
         if len({topic.id for topic in self.topics}) != len(self.topics):
             raise ValueError("Topic IDs must be unique")
-        question_ids = [question.id for topic in self.topics for question in topic.questions]
+        question_ids = [
+            question.id for topic in self.topics for question in topic.questions
+        ]
         if len(set(question_ids)) != len(question_ids):
             raise ValueError("Bank question IDs must be unique across topics")
         slug = self.topics[0].questions[0].id.rsplit(".", 2)[0]
@@ -87,7 +92,9 @@ class RolePack(BaseModel):
             != [f"{slug}.{topic.id}.a", f"{slug}.{topic.id}.b"]
             for topic in self.topics
         ):
-            raise ValueError("Bank question IDs must share a job slug and use .<topic-id>.a/b")
+            raise ValueError(
+                "Bank question IDs must share a job slug and use .<topic-id>.a/b"
+            )
         return self
 
 
@@ -152,9 +159,12 @@ class NextStep:
 class InterviewPolicy:
     """Pure progression over committed answers, validated signals and the frozen pack."""
 
-    def validate_signal(self, signal: RubricSignal, snapshot: InterviewSnapshot) -> None:
+    def validate_signal(
+        self, signal: RubricSignal, snapshot: InterviewSnapshot
+    ) -> None:
         topic = next(
-            (topic for topic in snapshot.pack.topics if topic.id == signal.topic_id), None
+            (topic for topic in snapshot.pack.topics if topic.id == signal.topic_id),
+            None,
         )
         if topic is None:
             raise ValueError("Unknown rubric topic")
@@ -166,7 +176,9 @@ class InterviewPolicy:
         for item in signal.evidence:
             answer = answers.get(item.answer_id)
             if answer is None or answer.topic_id != topic.id:
-                raise ValueError("Evidence must cite an answer from this topic and interview")
+                raise ValueError(
+                    "Evidence must cite an answer from this topic and interview"
+                )
             if item.quote not in answer.answer_text:
                 raise ValueError("Evidence quote must be verbatim")
         if signal.skill_ids and not signal.evidence:
@@ -230,9 +242,7 @@ class InterviewPolicy:
         # Only answered questions beyond the mandatory first six count as
         # extra probes. A fresh topic wins over another repeated probe.
         probes = {
-            topic.id: sum(
-                answer.topic_id == topic.id for answer in answers[6:]
-            )
+            topic.id: sum(answer.topic_id == topic.id for answer in answers[6:])
             for topic in topics
         }
         _, selected = min(
@@ -253,9 +263,14 @@ _STOP_CONTROLS = frozenset(
 )
 _REPEAT_CONTROLS = frozenset(
     {
-        "repeat", "repeat that", "repeat the question", "clarify the question",
-        "can you repeat the question", "could you repeat the question",
-        "can you clarify the question", "could you clarify the question",
+        "repeat",
+        "repeat that",
+        "repeat the question",
+        "clarify the question",
+        "can you repeat the question",
+        "could you repeat the question",
+        "can you clarify the question",
+        "could you clarify the question",
     }
 )
 

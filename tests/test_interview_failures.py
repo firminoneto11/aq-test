@@ -37,12 +37,16 @@ async def _job_id(db: SqlDBClientPort) -> UUID:
 
 async def _owner(db: SqlDBClientPort, app: AsgiApp) -> UserSchema:
     return await AuthUseCase(
-        db=db, passwords=app.state.passwords, secret=settings.JWT_SECRET,
+        db=db,
+        passwords=app.state.passwords,
+        secret=settings.JWT_SECRET,
         algorithm="HS256",
     ).create_user(f"failure-{uuid4()}@example.com", "correct-horse-battery-staple")
 
 
-async def _remove_rows(db: SqlDBClientPort, owner_ids: list[UUID], interview_ids: list[tuple[UUID, UUID]]) -> None:
+async def _remove_rows(
+    db: SqlDBClientPort, owner_ids: list[UUID], interview_ids: list[tuple[UUID, UUID]]
+) -> None:
     for interview_id, owner_id in interview_ids:
         await remove_interview(db, interview_id, owner_id, remove_user=False)
     if owner_ids:
@@ -64,7 +68,9 @@ class FailingDispatchGateway(RoomGateway):
             raise RuntimeError("media dispatch failed")
         return job
 
-    def issue_token(self, room_name: str, participant_identity: str, expires_at: datetime) -> str:
+    def issue_token(
+        self, room_name: str, participant_identity: str, expires_at: datetime
+    ) -> str:
         self.tokens_issued += 1
         return super().issue_token(room_name, participant_identity, expires_at)
 
@@ -88,7 +94,9 @@ async def test_failed_dispatch_releases_capacity_and_fresh_attempt_issues_only_r
     owner = await _owner(db, app)
     interview_ids: list[tuple[UUID, UUID]] = []
     gateway = FailingDispatchGateway()
-    voice = VoiceSessionService(db, gateway, server_url="wss://test.livekit.invalid", max_active=1)
+    voice = VoiceSessionService(
+        db, gateway, server_url="wss://test.livekit.invalid", max_active=1
+    )
     service = InterviewService(db, None)
     try:
         first, _ = await service.create(owner.id, job_id, uuid4())
@@ -152,7 +160,9 @@ async def test_no_show_lease_expiry_frees_admission_and_cannot_be_revived(
     interview_ids: list[tuple[UUID, UUID]] = []
     gateway = RoomGateway()
     gateway.proceed.set()
-    voice = VoiceSessionService(db, gateway, server_url="wss://test.livekit.invalid", max_active=1)
+    voice = VoiceSessionService(
+        db, gateway, server_url="wss://test.livekit.invalid", max_active=1
+    )
     service = InterviewService(db, None)
     Clock.current = datetime.now(UTC)
     monkeypatch.setattr("app.usecases.voice_sessions.datetime", Clock)
@@ -194,7 +204,9 @@ async def test_old_worker_callbacks_and_heartbeat_cannot_change_replacement(
     interview_ids: list[tuple[UUID, UUID]] = []
     gateway = RoomGateway()
     gateway.proceed.set()
-    voice = VoiceSessionService(db, gateway, server_url="wss://test.livekit.invalid", lease_seconds=600)
+    voice = VoiceSessionService(
+        db, gateway, server_url="wss://test.livekit.invalid", lease_seconds=600
+    )
     service = InterviewService(db, cast(LLMPort, ScenarioLLM()))
     try:
         created, _ = await service.create(owner.id, job_id, uuid4())
@@ -214,20 +226,34 @@ async def test_old_worker_callbacks_and_heartbeat_cannot_change_replacement(
         assert not await voice.renew_lease(created.id, old.run_id, "old-job")
         assert not await service.begin_question(created.id, old.run_id, question_id)
         with pytest.raises(GenericException) as stale:
-            await service.record_turn(created.id, old.run_id, "late-candidate", question_id, "Late answer")
+            await service.record_turn(
+                created.id, old.run_id, "late-candidate", question_id, "Late answer"
+            )
         assert stale.value.code == 409
         assert await voice.claim_run(created.id, replacement.run_id, "new-job")
         assert await service.begin_question(created.id, replacement.run_id, question_id)
         await service.observe_assistant(
-            created.id, replacement.run_id, "new-speech", question_id,
-            "question", approved.text, False, "tts_aligned",
+            created.id,
+            replacement.run_id,
+            "new-speech",
+            question_id,
+            "question",
+            approved.text,
+            False,
+            "tts_aligned",
         )
         before = await service.get_state(owner.id, created.id)
         assert before.current_question is not None
         assert before.current_question.delivery_status == "completed"
         await service.observe_assistant(
-            created.id, old.run_id, "late-speech", question_id,
-            "question", "What did you do when delivery was at risk?", True, "sdk_estimate",
+            created.id,
+            old.run_id,
+            "late-speech",
+            question_id,
+            "question",
+            "What did you do when delivery was at risk?",
+            True,
+            "sdk_estimate",
         )
         await voice.release_run(created.id, old.run_id, "old-job", "stt_unavailable")
         after = await service.get_state(owner.id, created.id)
@@ -238,10 +264,16 @@ async def test_old_worker_callbacks_and_heartbeat_cannot_change_replacement(
         new_run_state = await service.voice_state(created.id, replacement.run_id)
         assert new_run_state is not None and new_run_state.run_current
         transcript = await service.get_transcript(owner.id, created.id)
-        assert [message.run_id for message in transcript.messages] == [replacement.run_id, old.run_id]
+        assert [message.run_id for message in transcript.messages] == [
+            replacement.run_id,
+            old.run_id,
+        ]
         assert transcript.messages[1].interrupted
         accepted = await service.record_turn(
-            created.id, replacement.run_id, "new-answer", question_id,
+            created.id,
+            replacement.run_id,
+            "new-answer",
+            question_id,
             "I negotiated the scope with another team.",
         )
         assert accepted.kind == "answer"
@@ -270,7 +302,10 @@ class InvalidProposalLLM(ScenarioLLM):
             ):
                 self.invalid_calls += 1
                 valid = await super().generate_completion(
-                    system_message, user_message.split("\nPrevious output was invalid:", 1)[0], tools, schema_output
+                    system_message,
+                    user_message.split("\nPrevious output was invalid:", 1)[0],
+                    tools,
+                    schema_output,
                 )
                 if self.invalid_step == "follow_up":
                     valid["source_quote"] = "a detail the candidate never said"
@@ -278,7 +313,10 @@ class InvalidProposalLLM(ScenarioLLM):
                     valid["bank_question_id"] = "backend-engineer.api_design.unlisted"
                 return valid
         return await super().generate_completion(
-            system_message, user_message.split("\nPrevious output was invalid:", 1)[0], tools, schema_output
+            system_message,
+            user_message.split("\nPrevious output was invalid:", 1)[0],
+            tools,
+            schema_output,
         )
 
 
@@ -294,7 +332,9 @@ async def test_invalid_proposal_keeps_saved_answer_pending_until_fresh_run_recov
     interview_ids: list[tuple[UUID, UUID]] = []
     gateway = RoomGateway()
     gateway.proceed.set()
-    voice = VoiceSessionService(db, gateway, server_url="wss://test.livekit.invalid", lease_seconds=600)
+    voice = VoiceSessionService(
+        db, gateway, server_url="wss://test.livekit.invalid", lease_seconds=600
+    )
     malformed = InvalidProposalLLM(invalid_step)
     service = InterviewService(db, cast(LLMPort, malformed))
     try:
@@ -306,16 +346,26 @@ async def test_invalid_proposal_keeps_saved_answer_pending_until_fresh_run_recov
         expected_answers = 1 if invalid_step == "follow_up" else 2
         for index in range(expected_answers):
             assert approved is not None and approved.question_id is not None
-            assert await service.begin_question(created.id, old.run_id, approved.question_id)
+            assert await service.begin_question(
+                created.id, old.run_id, approved.question_id
+            )
             recorded = await service.record_turn(
-                created.id, old.run_id, f"answer-{index}", approved.question_id,
-                ("I negotiated delivery with the other team." if index == 0
-                 else "I measured the outcome of that trade-off."),
+                created.id,
+                old.run_id,
+                f"answer-{index}",
+                approved.question_id,
+                (
+                    "I negotiated delivery with the other team."
+                    if index == 0
+                    else "I measured the outcome of that trade-off."
+                ),
             )
             assert recorded.kind == "answer"
             approved = await service.prepare_reply(created.id, old.run_id, lambda: True)
         assert approved is None
-        assert malformed.invalid_calls == 2  # One corrective attempt, then visible failure.
+        assert (
+            malformed.invalid_calls == 2
+        )  # One corrective attempt, then visible failure.
         paused = await service.get_state(owner.id, created.id)
         assert paused.status == "paused"
         assert paused.last_error_code == "llm_invalid_output"
@@ -325,21 +375,32 @@ async def test_invalid_proposal_keeps_saved_answer_pending_until_fresh_run_recov
         assert paused.current_question.ordinal == expected_answers
         transcript = await service.get_transcript(owner.id, created.id)
         assert len(transcript.questions) == expected_answers
-        assert [q.answer.text for q in transcript.questions if q.answer is not None] == [
+        assert [
+            q.answer.text for q in transcript.questions if q.answer is not None
+        ] == [
             "I negotiated delivery with the other team.",
-            *(["I measured the outcome of that trade-off."] if expected_answers == 2 else []),
+            *(
+                ["I measured the outcome of that trade-off."]
+                if expected_answers == 2
+                else []
+            ),
         ]
         assert [entry.processing_status for entry in transcript.messages] == [
-            *(["applied"] if expected_answers == 2 else []), "pending"
+            *(["applied"] if expected_answers == 2 else []),
+            "pending",
         ]
-        assert paused.rubric[0].status == ("assessed" if expected_answers == 2 else "unobserved")
+        assert paused.rubric[0].status == (
+            "assessed" if expected_answers == 2 else "unobserved"
+        )
         # A new request fences the failed run and resumes from the saved pending input.
         recovered = await voice.connect(owner.id, created.id, uuid4())
         assert isinstance(recovered, ConnectionGrant)
         assert recovered.run_id != old.run_id
         assert recovered.state.last_error_code is None
         restored = InterviewService(db, cast(LLMPort, ScenarioLLM()))
-        next_question = await restored.prepare_reply(created.id, recovered.run_id, lambda: True)
+        next_question = await restored.prepare_reply(
+            created.id, recovered.run_id, lambda: True
+        )
         assert next_question is not None and next_question.kind == "question"
         assert next_question.question_id is not None
         state = await restored.get_state(owner.id, created.id)
@@ -350,10 +411,13 @@ async def test_invalid_proposal_keeps_saved_answer_pending_until_fresh_run_recov
         assert state.current_question is not None
         assert state.current_question.id == next_question.question_id
         assert state.current_question.ordinal == expected_answers + 1
-        assert state.current_question.kind == ("follow_up" if expected_answers == 1 else "bank")
-        assert [entry.processing_status for entry in (await restored.get_transcript(owner.id, created.id)).messages] == [
-            "applied" for _ in range(expected_answers)
-        ]
+        assert state.current_question.kind == (
+            "follow_up" if expected_answers == 1 else "bank"
+        )
+        assert [
+            entry.processing_status
+            for entry in (await restored.get_transcript(owner.id, created.id)).messages
+        ] == ["applied" for _ in range(expected_answers)]
     finally:
         await _remove_rows(db, [owner.id], interview_ids)
 
@@ -370,7 +434,9 @@ async def test_jwt_ownership_denies_every_private_route_and_end_preserves_natura
     interview_ids: list[tuple[UUID, UUID]] = []
     gateway = RoomGateway()
     gateway.proceed.set()
-    voice = VoiceSessionService(db, gateway, server_url="wss://test.livekit.invalid", lease_seconds=600)
+    voice = VoiceSessionService(
+        db, gateway, server_url="wss://test.livekit.invalid", lease_seconds=600
+    )
     old_voice = [(mounted, mounted.state.voice_sessions) for mounted in config.apps]
     for mounted, _ in old_voice:
         mounted.state.voice_sessions = voice
@@ -381,8 +447,12 @@ async def test_jwt_ownership_denies_every_private_route_and_end_preserves_natura
         token_responses = [
             await http_client.post(
                 "/api/v1/auth/token",
-                data={"username": user.email, "password": "correct-horse-battery-staple"},
-            ) for user in (owner, stranger)
+                data={
+                    "username": user.email,
+                    "password": "correct-horse-battery-staple",
+                },
+            )
+            for user in (owner, stranger)
         ]
         assert all(response.status_code == 200 for response in token_responses)
         owner_headers, stranger_headers = [
@@ -398,7 +468,9 @@ async def test_jwt_ownership_denies_every_private_route_and_end_preserves_natura
             ("POST", "/end", None),
             ("POST", "/evaluation", None),
         ):
-            response = await http_client.request(method, base + suffix, json=body, headers=stranger_headers)
+            response = await http_client.request(
+                method, base + suffix, json=body, headers=stranger_headers
+            )
             assert response.status_code == 404, (method, suffix, response.text)
         still_created = await service.get_state(owner.id, created.id)
         assert still_created.status == "created"
@@ -407,22 +479,34 @@ async def test_jwt_ownership_denies_every_private_route_and_end_preserves_natura
         assert gateway.dispatches == []
         connected = await voice.connect(owner.id, created.id, uuid4())
         assert isinstance(connected, ConnectionGrant)
-        approved = await service.prepare_reply(created.id, connected.run_id, lambda: True)
-        for index, answer in enumerate((
-            "I aligned two teams around a clear trade-off.",
-            "I measured the delivery impact after the change.",
-            "I used idempotency keys for safe API retries.",
-            "I monitored duplicate client requests before deployment.",
-            "I used transactions to protect stock reservations.",
-            "I diagnosed an incident and added prevention checks.",
-        )):
+        approved = await service.prepare_reply(
+            created.id, connected.run_id, lambda: True
+        )
+        for index, answer in enumerate(
+            (
+                "I aligned two teams around a clear trade-off.",
+                "I measured the delivery impact after the change.",
+                "I used idempotency keys for safe API retries.",
+                "I monitored duplicate client requests before deployment.",
+                "I used transactions to protect stock reservations.",
+                "I diagnosed an incident and added prevention checks.",
+            )
+        ):
             assert approved is not None and approved.question_id is not None
-            assert await service.begin_question(created.id, connected.run_id, approved.question_id)
+            assert await service.begin_question(
+                created.id, connected.run_id, approved.question_id
+            )
             recorded = await service.record_turn(
-                created.id, connected.run_id, f"answer-{index}", approved.question_id, answer
+                created.id,
+                connected.run_id,
+                f"answer-{index}",
+                approved.question_id,
+                answer,
             )
             assert recorded.kind == "answer"
-            approved = await service.prepare_reply(created.id, connected.run_id, lambda: True)
+            approved = await service.prepare_reply(
+                created.id, connected.run_id, lambda: True
+            )
         assert approved is not None and approved.kind == "closing"
         naturally_finished = await service.get_state(owner.id, created.id)
         assert naturally_finished.status == "evaluating"
@@ -434,7 +518,9 @@ async def test_jwt_ownership_denies_every_private_route_and_end_preserves_natura
         assert ended.json()["answered_count"] == 6
         assert ended.json()["decision"]["reason_code"] == "coverage_complete"
         assert connected.room_name not in gateway.rooms
-        assert (await service.get_transcript(owner.id, created.id)).status == "evaluating"
+        assert (
+            await service.get_transcript(owner.id, created.id)
+        ).status == "evaluating"
         no_resume = await http_client.post(
             base + "/connect", json={"request_id": str(uuid4())}, headers=owner_headers
         )

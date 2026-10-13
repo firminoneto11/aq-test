@@ -100,7 +100,9 @@ class LiveKitGateway(VoiceGatewayPort):
 
     async def close_room(self, room_name: str) -> None:
         try:
-            await self._get_client().room.delete_room(api.DeleteRoomRequest(room=room_name))
+            await self._get_client().room.delete_room(
+                api.DeleteRoomRequest(room=room_name)
+            )
         except api.ServerError as exc:
             if exc.code != api.ServerErrorCode.NOT_FOUND:
                 raise

@@ -58,14 +58,27 @@ class ProposalLLM(ScenarioLLM):
         answers: list[dict[str, str]] = payload["questions_and_answers"]
         topics: list[dict[str, Any]] = payload["topics"]
         by_topic = {
-            topic["id"]: next(answer["answer_id"] for answer in answers if answer["topic_id"] == topic["id"])
+            topic["id"]: next(
+                answer["answer_id"]
+                for answer in answers
+                if answer["topic_id"] == topic["id"]
+            )
             for topic in topics
         }
         proposal: dict[str, Any] = {
-            "strengths": [{"text": "Explained a concrete API trade-off", "answer_ids": [by_topic["api_design"]]}],
+            "strengths": [
+                {
+                    "text": "Explained a concrete API trade-off",
+                    "answer_ids": [by_topic["api_design"]],
+                }
+            ],
             "concerns": [],
             "rubric_scores": [
-                {"topic_id": topic["id"], "score": score, "answer_ids": [by_topic[topic["id"]]]}
+                {
+                    "topic_id": topic["id"],
+                    "score": score,
+                    "answer_ids": [by_topic[topic["id"]]],
+                }
                 for topic, score in zip(topics, self.scores, strict=True)
             ],
         }
@@ -134,7 +147,11 @@ async def finished_interview(
                 interview.answerable_question_id = question.id
                 question.delivery_status = "completed"
             recorded = await service.record_turn(
-                interview_id, run_id, f"evaluated-answer-{ordinal}", approved.question_id, spoken
+                interview_id,
+                run_id,
+                f"evaluated-answer-{ordinal}",
+                approved.question_id,
+                spoken,
             )
             assert recorded.kind == "answer"
             approved = await service.prepare_reply(interview_id, run_id, lambda: True)
@@ -152,8 +169,12 @@ async def finished_interview(
 @pytest.mark.parametrize(
     "invalid",
     [
-        "cross_topic", "unknown_answer", "out_of_range",
-        "duplicate_topic", "uncited_strength", "empty_strength",
+        "cross_topic",
+        "unknown_answer",
+        "out_of_range",
+        "duplicate_topic",
+        "uncited_strength",
+        "empty_strength",
     ],
 )
 async def test_invalid_proposal_preserves_saved_interview_and_explicit_retry_completes(
@@ -166,7 +187,9 @@ async def test_invalid_proposal_preserves_saved_interview_and_explicit_retry_com
     with pytest.raises(GenericException) as raised:
         await bad.evaluate(interview_id)
     assert raised.value.code == 502
-    assert bad_llm.evaluation_calls == 2  # One corrective attempt cannot launder invalid evidence.
+    assert (
+        bad_llm.evaluation_calls == 2
+    )  # One corrective attempt cannot launder invalid evidence.
     state = await bad.get_state(owner_id, interview_id)
     assert state.status == "evaluation_failed"
     assert state.last_error_code == "evaluation_failed"
@@ -218,7 +241,9 @@ async def test_expired_inflight_evaluator_cannot_overwrite_newer_completed_claim
         async with db.begin_session() as session:
             interview = await session.get(Interview, interview_id)
             assert interview is not None and interview.evaluation_claim_id is not None
-            interview.evaluation_claim_expires_at = datetime.now(UTC) - timedelta(seconds=1)
+            interview.evaluation_claim_expires_at = datetime.now(UTC) - timedelta(
+                seconds=1
+            )
         completed = await winner.evaluate(interview_id)
         assert completed.status == "completed" and completed.result is not None
         assert completed.result.overall_score == 55

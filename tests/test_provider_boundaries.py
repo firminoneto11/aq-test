@@ -4,8 +4,8 @@ import asyncio
 import json
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
 from typing import Any, cast
+from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import httpx
@@ -26,7 +26,9 @@ from infra.voice import LiveKitGateway
 
 @pytest.fixture
 def openrouter(monkeypatch: pytest.MonkeyPatch) -> LLMAdapter:
-    monkeypatch.setattr(settings, "OPENROUTER_API_KEY", SecretStr("local-fake-openrouter-key"))
+    monkeypatch.setattr(
+        settings, "OPENROUTER_API_KEY", SecretStr("local-fake-openrouter-key")
+    )
     return LLMAdapter("openrouter", "openai/gpt-4.1-mini")
 
 
@@ -35,7 +37,9 @@ def gateway(monkeypatch: pytest.MonkeyPatch) -> LiveKitGateway:
     monkeypatch.setattr(settings, "LIVEKIT_URL", "wss://test.livekit.invalid")
     monkeypatch.setattr(settings, "LIVEKIT_API_KEY", SecretStr("local-fake-key"))
     monkeypatch.setattr(
-        settings, "LIVEKIT_API_SECRET", SecretStr("local-fake-signing-secret-with-32-bytes")
+        settings,
+        "LIVEKIT_API_SECRET",
+        SecretStr("local-fake-signing-secret-with-32-bytes"),
     )
     return LiveKitGateway()
 
@@ -55,16 +59,23 @@ async def test_openrouter_structured_response_uses_strict_json_and_parses_once(
     attempts = []
 
     async def generate(
-        self: ChatOpenRouter, messages: list[BaseMessage], stop: list[str] | None = None,
-        run_manager: AsyncCallbackManagerForLLMRun | None = None, **kwargs: Any,
+        self: ChatOpenRouter,
+        messages: list[BaseMessage],
+        stop: list[str] | None = None,
+        run_manager: AsyncCallbackManagerForLLMRun | None = None,
+        **kwargs: Any,
     ) -> ChatResult:
         attempts.append(kwargs["response_format"])
         assert isinstance(messages[0], SystemMessage)
         assert isinstance(messages[1], HumanMessage)
-        return ChatResult(generations=[ChatGeneration(message=AIMessage(content='{"answer":"ok"}'))])
+        return ChatResult(
+            generations=[ChatGeneration(message=AIMessage(content='{"answer":"ok"}'))]
+        )
 
     monkeypatch.setattr(ChatOpenRouter, "_agenerate", generate)
-    result = await openrouter.generate_completion("Instructions", "Candidate answer", schema_output=SCHEMA)
+    result = await openrouter.generate_completion(
+        "Instructions", "Candidate answer", schema_output=SCHEMA
+    )
     assert result == {"answer": "ok"}
     assert len(attempts) == 1
     assert attempts[0]["type"] == "json_schema"
@@ -78,17 +89,27 @@ async def test_openrouter_invalid_json_does_not_retry_and_preserves_parse_failur
     attempts = 0
 
     async def generate(
-        self: ChatOpenRouter, messages: list[BaseMessage], stop: list[str] | None = None,
-        run_manager: AsyncCallbackManagerForLLMRun | None = None, **kwargs: Any,
+        self: ChatOpenRouter,
+        messages: list[BaseMessage],
+        stop: list[str] | None = None,
+        run_manager: AsyncCallbackManagerForLLMRun | None = None,
+        **kwargs: Any,
     ) -> ChatResult:
         nonlocal attempts
         attempts += 1
-        return ChatResult(generations=[ChatGeneration(message=AIMessage(content="not JSON"))])
+        return ChatResult(
+            generations=[ChatGeneration(message=AIMessage(content="not JSON"))]
+        )
 
     monkeypatch.setattr(ChatOpenRouter, "_agenerate", generate)
     # The application validates this None as invalid structured output and decides
     # whether to make its one corrective attempt. The transport must not retry it.
-    assert await openrouter.generate_completion("Instructions", "Answer", schema_output=SCHEMA) is None
+    assert (
+        await openrouter.generate_completion(
+            "Instructions", "Answer", schema_output=SCHEMA
+        )
+        is None
+    )
     assert attempts == 1
 
 
@@ -100,8 +121,11 @@ async def test_openrouter_slow_structured_request_is_cancelled_without_another_a
     cancelled = asyncio.Event()
 
     async def generate(
-        self: ChatOpenRouter, messages: list[BaseMessage], stop: list[str] | None = None,
-        run_manager: AsyncCallbackManagerForLLMRun | None = None, **kwargs: Any,
+        self: ChatOpenRouter,
+        messages: list[BaseMessage],
+        stop: list[str] | None = None,
+        run_manager: AsyncCallbackManagerForLLMRun | None = None,
+        **kwargs: Any,
     ) -> ChatResult:
         nonlocal attempts
         attempts += 1
@@ -131,8 +155,11 @@ async def test_openrouter_upstream_failure_is_not_retried_or_swallowed(
     failure = ConnectionError("provider unavailable")
 
     async def generate(
-        self: ChatOpenRouter, messages: list[BaseMessage], stop: list[str] | None = None,
-        run_manager: AsyncCallbackManagerForLLMRun | None = None, **kwargs: Any,
+        self: ChatOpenRouter,
+        messages: list[BaseMessage],
+        stop: list[str] | None = None,
+        run_manager: AsyncCallbackManagerForLLMRun | None = None,
+        **kwargs: Any,
     ) -> ChatResult:
         nonlocal attempts
         attempts += 1
@@ -141,7 +168,9 @@ async def test_openrouter_upstream_failure_is_not_retried_or_swallowed(
     monkeypatch.setattr(ChatOpenRouter, "_agenerate", generate)
     with pytest.raises(ConnectionError) as raised:
         await asyncio.wait_for(
-            openrouter.generate_completion("Instructions", "Answer", schema_output=SCHEMA),
+            openrouter.generate_completion(
+                "Instructions", "Answer", schema_output=SCHEMA
+            ),
             timeout=5,
         )
     assert raised.value is failure
@@ -161,7 +190,9 @@ async def test_openrouter_sdk_attempts_unavailable_provider_once(
             json={"error": {"code": 503, "message": "provider unavailable"}},
         )
 
-    sdk_config = cast(ChatOpenRouter, getattr(openrouter, "_model")).client.sdk_configuration
+    sdk_config = cast(
+        ChatOpenRouter, getattr(openrouter, "_model")
+    ).client.sdk_configuration
     original_client = sdk_config.async_client
     async with httpx.AsyncClient(transport=httpx.MockTransport(unavailable)) as client:
         sdk_config.async_client = client
@@ -189,18 +220,32 @@ async def test_text_completion_returns_provider_text_without_logging_private_con
     monkeypatch.setattr(llm_module, "logger", events)
 
     async def generate(
-        self: ChatOpenRouter, messages: list[BaseMessage], stop: list[str] | None = None,
-        run_manager: AsyncCallbackManagerForLLMRun | None = None, **kwargs: Any,
+        self: ChatOpenRouter,
+        messages: list[BaseMessage],
+        stop: list[str] | None = None,
+        run_manager: AsyncCallbackManagerForLLMRun | None = None,
+        **kwargs: Any,
     ) -> ChatResult:
         return ChatResult(
-            generations=[ChatGeneration(message=AIMessage(
-                content=private_output,
-                usage_metadata={"input_tokens": 12, "output_tokens": 3, "total_tokens": 15},
-            ))]
+            generations=[
+                ChatGeneration(
+                    message=AIMessage(
+                        content=private_output,
+                        usage_metadata={
+                            "input_tokens": 12,
+                            "output_tokens": 3,
+                            "total_tokens": 15,
+                        },
+                    )
+                )
+            ]
         )
 
     monkeypatch.setattr(ChatOpenRouter, "_agenerate", generate)
-    assert await openrouter.generate_completion("Instructions", private_input) == private_output
+    assert (
+        await openrouter.generate_completion("Instructions", private_input)
+        == private_output
+    )
     events.ainfo.assert_awaited_once()
     event = events.ainfo.await_args
     assert event.args == ("llm.completion",)
@@ -216,8 +261,11 @@ async def test_text_completion_upstream_failure_propagates(
     failure = ValueError("provider rejected request")
 
     async def generate(
-        self: ChatOpenRouter, messages: list[BaseMessage], stop: list[str] | None = None,
-        run_manager: AsyncCallbackManagerForLLMRun | None = None, **kwargs: Any,
+        self: ChatOpenRouter,
+        messages: list[BaseMessage],
+        stop: list[str] | None = None,
+        run_manager: AsyncCallbackManagerForLLMRun | None = None,
+        **kwargs: Any,
     ) -> ChatResult:
         raise failure
 
@@ -235,10 +283,14 @@ async def test_text_completion_upstream_failure_propagates(
     ],
 )
 async def test_create_room_only_tolerates_already_existing_room(
-    gateway: LiveKitGateway, code: str, should_raise: bool,
+    gateway: LiveKitGateway,
+    code: str,
+    should_raise: bool,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    failure = api.ServerError(code, "room rejected", status=409 if not should_raise else 403)
+    failure = api.ServerError(
+        code, "room rejected", status=409 if not should_raise else 403
+    )
     calls: list[api.CreateRoomRequest] = []
 
     async def create_room(request: api.CreateRoomRequest) -> None:
@@ -246,7 +298,8 @@ async def test_create_room_only_tolerates_already_existing_room(
         raise failure
 
     monkeypatch.setattr(
-        gateway, "_get_client",
+        gateway,
+        "_get_client",
         lambda: SimpleNamespace(room=SimpleNamespace(create_room=create_room)),
     )
     if should_raise:
@@ -262,7 +315,8 @@ async def test_create_room_only_tolerates_already_existing_room(
 
 
 async def test_dispatch_restricts_metadata_and_propagates_provider_failure(
-    gateway: LiveKitGateway, monkeypatch: pytest.MonkeyPatch,
+    gateway: LiveKitGateway,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     interview_id, run_id = uuid4(), uuid4()
     calls: list[api.CreateAgentDispatchRequest] = []
@@ -273,19 +327,26 @@ async def test_dispatch_restricts_metadata_and_propagates_provider_failure(
 
     fake_dispatch = SimpleNamespace(create_dispatch=dispatch)
     monkeypatch.setattr(
-        gateway, "_get_client",
+        gateway,
+        "_get_client",
         lambda: SimpleNamespace(agent_dispatch=fake_dispatch),
     )
-    assert await gateway.dispatch("interview-room", interview_id, run_id) == "worker-job-id"
+    assert (
+        await gateway.dispatch("interview-room", interview_id, run_id)
+        == "worker-job-id"
+    )
     assert len(calls) == 1
     request = calls[0]
     assert request.room == "interview-room"
     assert request.agent_name == "interviewer"
     assert json.loads(request.metadata) == {
-        "interview_id": str(interview_id), "run_id": str(run_id)
+        "interview_id": str(interview_id),
+        "run_id": str(run_id),
     }
 
-    failure = api.ServerError(api.ServerErrorCode.UNAVAILABLE, "dispatch unavailable", status=503)
+    failure = api.ServerError(
+        api.ServerErrorCode.UNAVAILABLE, "dispatch unavailable", status=503
+    )
 
     async def rejected(request: api.CreateAgentDispatchRequest) -> None:
         raise failure
@@ -304,10 +365,14 @@ async def test_dispatch_restricts_metadata_and_propagates_provider_failure(
     ],
 )
 async def test_close_room_only_tolerates_absent_room(
-    gateway: LiveKitGateway, code: str, should_raise: bool,
+    gateway: LiveKitGateway,
+    code: str,
+    should_raise: bool,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    failure = api.ServerError(code, "room close failed", status=404 if not should_raise else 503)
+    failure = api.ServerError(
+        code, "room close failed", status=404 if not should_raise else 503
+    )
     calls: list[str] = []
 
     async def delete_room(request: api.DeleteRoomRequest) -> None:
@@ -315,7 +380,8 @@ async def test_close_room_only_tolerates_absent_room(
         raise failure
 
     monkeypatch.setattr(
-        gateway, "_get_client",
+        gateway,
+        "_get_client",
         lambda: SimpleNamespace(room=SimpleNamespace(delete_room=delete_room)),
     )
     if should_raise:
@@ -360,11 +426,15 @@ def test_gateway_rejects_expired_grants(gateway: LiveKitGateway, expiry: int):
         )
 
 
-def test_gateway_token_restricts_room_identity_and_absolute_expiry(gateway: LiveKitGateway):
+def test_gateway_token_restricts_room_identity_and_absolute_expiry(
+    gateway: LiveKitGateway,
+):
     expiry = datetime.now(UTC) + timedelta(minutes=5)
     token = gateway.issue_token("interview-room", "candidate-identity", expiry)
     claims = jwt.decode(
-        token, "local-fake-signing-secret-with-32-bytes", algorithms=["HS256"],
+        token,
+        "local-fake-signing-secret-with-32-bytes",
+        algorithms=["HS256"],
         options={"verify_aud": False},
     )
     assert claims["sub"] == "candidate-identity"
@@ -372,7 +442,12 @@ def test_gateway_token_restricts_room_identity_and_absolute_expiry(gateway: Live
     assert 0 < claims["exp"] - datetime.now(UTC).timestamp() <= 300
     assert claims["exp"] <= expiry.timestamp()
     assert set(claims["video"]) == {
-        "roomJoin", "room", "canPublish", "canSubscribe", "canPublishData", "canPublishSources"
+        "roomJoin",
+        "room",
+        "canPublish",
+        "canSubscribe",
+        "canPublishData",
+        "canPublishSources",
     }
     assert claims["video"] == {
         "roomJoin": True,
@@ -389,4 +464,6 @@ def test_gateway_token_restricts_room_identity_and_absolute_expiry(gateway: Live
 
 def test_gateway_rejects_naive_expiry(gateway: LiveKitGateway):
     with pytest.raises(ValueError, match="timezone-aware"):
-        gateway.issue_token("interview-room", "candidate", datetime.now() + timedelta(minutes=5))
+        gateway.issue_token(
+            "interview-room", "candidate", datetime.now() + timedelta(minutes=5)
+        )

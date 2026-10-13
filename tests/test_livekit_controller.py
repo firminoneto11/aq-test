@@ -12,7 +12,10 @@ import sqlalchemy as sa
 from livekit.agents import AgentSession, llm, stt, tts
 from livekit.agents.voice import SpeechHandle
 from livekit.agents.voice.events import (
-    CloseEvent, ErrorEvent, SpeechCreatedEvent, UserStateChangedEvent,
+    CloseEvent,
+    ErrorEvent,
+    SpeechCreatedEvent,
+    UserStateChangedEvent,
 )
 from livekit.plugins import openai
 
@@ -47,9 +50,13 @@ async def test_sdk_say_interrupted_before_output_replays_one_durable_question(
         job_id = job.id
 
     user = await AuthUseCase(
-        db=db, passwords=app.state.passwords,
-        secret=settings.JWT_SECRET, algorithm="HS256",
-    ).create_user(f"sdk-controller-{uuid4()}@example.com", "correct-horse-battery-staple")
+        db=db,
+        passwords=app.state.passwords,
+        secret=settings.JWT_SECRET,
+        algorithm="HS256",
+    ).create_user(
+        f"sdk-controller-{uuid4()}@example.com", "correct-horse-battery-staple"
+    )
     interview_id: UUID | None = None
     reader = SqlDBClientAdapter(settings.DATABASE_URL, settings.AUTOCOMMIT)
     try:
@@ -71,7 +78,11 @@ async def test_sdk_say_interrupted_before_output_replays_one_durable_question(
         first_handles: list[SpeechHandle] = []
         first_sources: list[str] = []
         first_agent = InterviewerAgent(
-            interview_id, run_id, "sdk-local-first", writer, VoiceSessionService(db, None),
+            interview_id,
+            run_id,
+            "sdk-local-first",
+            writer,
+            VoiceSessionService(db, None),
         )
         async with AgentSession() as session:
             first_agent.bind_session(session)
@@ -106,7 +117,11 @@ async def test_sdk_say_interrupted_before_output_replays_one_durable_question(
         replay_handles: list[SpeechHandle] = []
         replay_sources: list[str] = []
         replay_agent = InterviewerAgent(
-            interview_id, run_id, "sdk-local-replay", writer, VoiceSessionService(db, None),
+            interview_id,
+            run_id,
+            "sdk-local-replay",
+            writer,
+            VoiceSessionService(db, None),
         )
         async with AgentSession() as session:
             replay_agent.bind_session(session)
@@ -134,7 +149,10 @@ async def test_sdk_say_interrupted_before_output_replays_one_durable_question(
         assert recovered.current_question.delivery_status == "completed"
         assert len(transcript.questions) == 1
         assert transcript.questions[0].answer is None
-        assert [(entry.speaker, entry.question_id, entry.kind, entry.text) for entry in transcript.messages] == [
+        assert [
+            (entry.speaker, entry.question_id, entry.kind, entry.text)
+            for entry in transcript.messages
+        ] == [
             ("assistant", question_id, "question", recovered.current_question.text),
         ]
         assert transcript.messages[0].text_source == "sdk_estimate"
@@ -162,9 +180,13 @@ async def test_sdk_prequest_speech_and_provider_failure_preserve_unanswered_ques
         job_id = job.id
 
     user = await AuthUseCase(
-        db=db, passwords=app.state.passwords,
-        secret=settings.JWT_SECRET, algorithm="HS256",
-    ).create_user(f"sdk-{failure_kind}-{uuid4()}@example.com", "correct-horse-battery-staple")
+        db=db,
+        passwords=app.state.passwords,
+        secret=settings.JWT_SECRET,
+        algorithm="HS256",
+    ).create_user(
+        f"sdk-{failure_kind}-{uuid4()}@example.com", "correct-horse-battery-staple"
+    )
     interview_id: UUID | None = None
     reader = SqlDBClientAdapter(settings.DATABASE_URL, settings.AUTOCOMMIT)
     try:
@@ -176,7 +198,9 @@ async def test_sdk_prequest_speech_and_provider_failure_preserve_unanswered_ques
         interview_id = state.id
         gateway = RoomGateway()
         gateway.proceed.set()
-        voice = VoiceSessionService(db, gateway, server_url="wss://test.livekit.invalid")
+        voice = VoiceSessionService(
+            db, gateway, server_url="wss://test.livekit.invalid"
+        )
         first_grant = await voice.connect(user.id, interview_id, uuid4())
         first_run = first_grant.run_id
         first_job = f"sdk-{failure_kind}-first"
@@ -227,8 +251,13 @@ async def test_sdk_prequest_speech_and_provider_failure_preserve_unanswered_ques
                 assert pending.answered_count == 0
                 assert pending.answerable_question_id is None
                 assert pending.current_question.delivery_status == "pending"
-                messages = (await durable.get_transcript(user.id, interview_id)).messages
-                assert [(item.speaker, item.question_id, item.answer_id, item.text) for item in messages] == [
+                messages = (
+                    await durable.get_transcript(user.id, interview_id)
+                ).messages
+                assert [
+                    (item.speaker, item.question_id, item.answer_id, item.text)
+                    for item in messages
+                ] == [
                     ("user", None, None, prelude.text_content),
                 ]
                 assert messages[0].processing_status == "applied"
@@ -238,8 +267,10 @@ async def test_sdk_prequest_speech_and_provider_failure_preserve_unanswered_ques
                     "error",
                     ErrorEvent(
                         error=error_type(
-                            timestamp=time(), label=f"test-{failure_kind}",
-                            error=RuntimeError("offline"), recoverable=False,
+                            timestamp=time(),
+                            label=f"test-{failure_kind}",
+                            error=RuntimeError("offline"),
+                            recoverable=False,
                         ),
                         source=f"test-{failure_kind}",
                     ),
@@ -256,7 +287,10 @@ async def test_sdk_prequest_speech_and_provider_failure_preserve_unanswered_ques
         # Waited for the SDK observer in close(): a cancelled, textless handle
         # must not create an assistant utterance after the earlier snapshot.
         before_resume = await durable.get_transcript(user.id, interview_id)
-        assert [(item.speaker, item.question_id, item.answer_id) for item in before_resume.messages] == [
+        assert [
+            (item.speaker, item.question_id, item.answer_id)
+            for item in before_resume.messages
+        ] == [
             ("user", None, None),
         ]
         async with db.begin_session() as session:
@@ -271,7 +305,11 @@ async def test_sdk_prequest_speech_and_provider_failure_preserve_unanswered_ques
         second_job = "sdk-stt-resume"
         assert await voice.claim_run(interview_id, second_grant.run_id, second_job)
         resumed_agent = InterviewerAgent(
-            interview_id, second_grant.run_id, second_job, interviews, voice,
+            interview_id,
+            second_grant.run_id,
+            second_job,
+            interviews,
+            voice,
         )
         replay_handles: list[SpeechHandle] = []
         async with AgentSession() as session:
@@ -298,7 +336,9 @@ async def test_sdk_prequest_speech_and_provider_failure_preserve_unanswered_ques
         assert recovered.answerable_question_id == question_id
         assert recovered.current_question.delivery_status == "completed"
         assert transcript.questions[0].answer is None
-        assert [(item.speaker, item.question_id, item.kind) for item in transcript.messages] == [
+        assert [
+            (item.speaker, item.question_id, item.kind) for item in transcript.messages
+        ] == [
             ("user", None, "control"),
             ("assistant", question_id, "question"),
         ]
@@ -323,7 +363,9 @@ async def test_sdk_finalized_speech_asks_evidence_grounded_followup_and_repeats_
         assert job is not None
         job_id = job.id
     user = await AuthUseCase(
-        db=db, passwords=app.state.passwords, secret=settings.JWT_SECRET,
+        db=db,
+        passwords=app.state.passwords,
+        secret=settings.JWT_SECRET,
         algorithm="HS256",
     ).create_user(f"sdk-turn-{uuid4()}@example.com", "correct-horse-battery-staple")
     interview_id: UUID | None = None
@@ -343,7 +385,11 @@ async def test_sdk_finalized_speech_asks_evidence_grounded_followup_and_repeats_
             interview.lease_expires_at = datetime.now(UTC) + timedelta(minutes=5)
 
         agent = InterviewerAgent(
-            interview_id, run_id, "sdk-local-turn", interviews, VoiceSessionService(db, None),
+            interview_id,
+            run_id,
+            "sdk-local-turn",
+            interviews,
+            VoiceSessionService(db, None),
         )
         handles: list[SpeechHandle] = []
         answer = (
@@ -354,8 +400,10 @@ async def test_sdk_finalized_speech_asks_evidence_grounded_followup_and_repeats_
         # llm_node supplies all text, so an inaccessible local endpoint catches
         # any accidental fallback to unsanctioned model generations.
         sdk_llm = openai.LLM(
-            model="gpt-4.1-mini", api_key="inert-local-only",
-            base_url="http://127.0.0.1:1", max_retries=0,
+            model="gpt-4.1-mini",
+            api_key="inert-local-only",
+            base_url="http://127.0.0.1:1",
+            max_retries=0,
         )
         async with AgentSession(llm=sdk_llm) as session:
             agent.bind_session(session)
@@ -395,7 +443,9 @@ async def test_sdk_finalized_speech_asks_evidence_grounded_followup_and_repeats_
                 after_answer = await durable.get_state(user.id, interview_id)
                 assert after_answer.question_count == 2
                 assert after_answer.answered_count == 1
-                assert after_answer.follow_up_count == 0  # Count only answered follow-ups.
+                assert (
+                    after_answer.follow_up_count == 0
+                )  # Count only answered follow-ups.
                 assert after_answer.current_question is not None
                 assert after_answer.current_question.kind == "follow_up"
                 followup_id = after_answer.current_question.id
@@ -408,7 +458,10 @@ async def test_sdk_finalized_speech_asks_evidence_grounded_followup_and_repeats_
                 transcript = await durable.get_transcript(user.id, interview_id)
                 assert transcript.questions[0].answer is not None
                 assert transcript.questions[0].answer.text == answer
-                assert transcript.questions[1].source_answer_id == transcript.questions[0].answer.id
+                assert (
+                    transcript.questions[1].source_answer_id
+                    == transcript.questions[0].answer.id
+                )
                 quote = transcript.questions[1].source_quote
                 assert quote is not None and quote in answer
                 assert quote in transcript.questions[1].text
@@ -418,7 +471,9 @@ async def test_sdk_finalized_speech_asks_evidence_grounded_followup_and_repeats_
                     UserStateChangedEvent(old_state="listening", new_state="speaking"),
                 )
                 repeat_context = llm.ChatContext()
-                repeat = repeat_context.add_message(role="user", content="repeat the question")
+                repeat = repeat_context.add_message(
+                    role="user", content="repeat the question"
+                )
                 await agent.on_user_turn_completed(repeat_context, repeat)
                 session.emit(
                     "user_state_changed",
@@ -436,7 +491,10 @@ async def test_sdk_finalized_speech_asks_evidence_grounded_followup_and_repeats_
         assert final.current_question is not None
         assert final.current_question.id == followup_id
         assert final.answerable_question_id == followup_id
-        assert final.decision is not None and final.decision.reason_code == "repeat_requested"
+        assert (
+            final.decision is not None
+            and final.decision.reason_code == "repeat_requested"
+        )
         assert [(entry.speaker, entry.kind) for entry in transcript.messages] == [
             ("assistant", "question"),
             ("user", "input"),
@@ -462,6 +520,7 @@ async def test_vad_only_start_cannot_strand_first_saved_answer(
     asgi_config: tuple[ASGIFactory, AsgiApp],
 ) -> None:
     """An epoch-invalidated planner must recover without a second finalized turn."""
+
     class HeldTurnLLM(ScenarioLLM):
         def __init__(self) -> None:
             self.entered = asyncio.Event()
@@ -469,8 +528,11 @@ async def test_vad_only_start_cannot_strand_first_saved_answer(
             self.turn_calls = 0
 
         async def generate_completion(
-            self, system_message: str, user_message: str,
-            tools: None = None, schema_output: dict[str, Any] | None = None,
+            self,
+            system_message: str,
+            user_message: str,
+            tools: None = None,
+            schema_output: dict[str, Any] | None = None,
         ) -> dict[str, Any]:
             if "just_answered_id" in json.loads(user_message):
                 self.turn_calls += 1
@@ -478,7 +540,10 @@ async def test_vad_only_start_cannot_strand_first_saved_answer(
                     self.entered.set()
                     await self.proceed.wait()
             return await super().generate_completion(
-                system_message, user_message, tools, schema_output,
+                system_message,
+                user_message,
+                tools,
+                schema_output,
             )
 
     _, app = asgi_config
@@ -488,9 +553,13 @@ async def test_vad_only_start_cannot_strand_first_saved_answer(
         assert job is not None
         job_id = job.id
     user = await AuthUseCase(
-        db=db, passwords=app.state.passwords, secret=settings.JWT_SECRET,
+        db=db,
+        passwords=app.state.passwords,
+        secret=settings.JWT_SECRET,
         algorithm="HS256",
-    ).create_user(f"sdk-vad-recovery-{uuid4()}@example.com", "correct-horse-battery-staple")
+    ).create_user(
+        f"sdk-vad-recovery-{uuid4()}@example.com", "correct-horse-battery-staple"
+    )
     interview_id: UUID | None = None
     try:
         model = HeldTurnLLM()
@@ -505,13 +574,19 @@ async def test_vad_only_start_cannot_strand_first_saved_answer(
             interview.run_id = run_id
             interview.lease_expires_at = datetime.now(UTC) + timedelta(minutes=5)
         agent = InterviewerAgent(
-            interview_id, run_id, "sdk-vad-recovery", interviews, VoiceSessionService(db, None),
+            interview_id,
+            run_id,
+            "sdk-vad-recovery",
+            interviews,
+            VoiceSessionService(db, None),
         )
         handles: list[tuple[str, SpeechHandle]] = []
         recovered = asyncio.Event()
         sdk_llm = openai.LLM(
-            model="gpt-4.1-mini", api_key="inert-local-only",
-            base_url="http://127.0.0.1:1", max_retries=0,
+            model="gpt-4.1-mini",
+            api_key="inert-local-only",
+            base_url="http://127.0.0.1:1",
+            max_retries=0,
         )
         async with AgentSession(llm=sdk_llm) as session:
             agent.bind_session(session)
@@ -562,13 +637,21 @@ async def test_vad_only_start_cannot_strand_first_saved_answer(
                 saved = await interviews.get_transcript(user.id, interview_id)
                 assert pending.status == "active" and pending.last_error_code is None
                 assert pending.question_count == pending.answered_count == 1
-                assert [item.processing_status for item in saved.messages if item.speaker == "user"] == [
+                assert [
+                    item.processing_status
+                    for item in saved.messages
+                    if item.speaker == "user"
+                ] == [
                     "pending",
                 ]
                 model.proceed.set()
                 await asyncio.wait_for(first_reply, timeout=10)
                 await asyncio.wait_for(recovered.wait(), timeout=10)
-                assert [source for source, _ in handles] == ["say", "generate_reply", "say"]
+                assert [source for source, _ in handles] == [
+                    "say",
+                    "generate_reply",
+                    "say",
+                ]
                 await asyncio.wait_for(handles[2][1], timeout=10)
                 after = await interviews.get_state(user.id, interview_id)
                 assert after.current_question is not None
@@ -582,18 +665,36 @@ async def test_vad_only_start_cannot_strand_first_saved_answer(
                 assert after.current_question is not None
                 assert after.current_question.kind == "follow_up"
                 assert after.last_error_code is None
-                assert model.turn_calls == 2  # Stale proposal discarded; saved text assessed once.
+                assert (
+                    model.turn_calls == 2
+                )  # Stale proposal discarded; saved text assessed once.
                 transcript = await interviews.get_transcript(user.id, interview_id)
                 assert transcript.questions[0].answer is not None
                 assert transcript.questions[0].answer.text == answer
-                assert transcript.questions[1].source_answer_id == transcript.questions[0].answer.id
+                assert (
+                    transcript.questions[1].source_answer_id
+                    == transcript.questions[0].answer.id
+                )
                 quote = transcript.questions[1].source_quote
                 assert quote is not None and quote in answer
-                assert [item.processing_status for item in transcript.messages if item.speaker == "user"] == [
+                assert [
+                    item.processing_status
+                    for item in transcript.messages
+                    if item.speaker == "user"
+                ] == [
                     "applied",
                 ]
-                assert len([item for item in transcript.messages if item.speaker == "assistant"
-                            and item.question_id == second_id]) == 1
+                assert (
+                    len(
+                        [
+                            item
+                            for item in transcript.messages
+                            if item.speaker == "assistant"
+                            and item.question_id == second_id
+                        ]
+                    )
+                    == 1
+                )
             finally:
                 model.proceed.set()
                 await asyncio.wait_for(agent.close(), timeout=10)

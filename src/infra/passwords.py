@@ -19,7 +19,7 @@ class PasswordAdapter(PasswordPort):
             matched = await asyncio.to_thread(
                 self._hasher.verify, password_hash or self._dummy_hash, password
             )
-        except (VerificationError, InvalidHashError):
+        except VerificationError, InvalidHashError:
             return False
         return bool(matched and password_hash is not None)
 

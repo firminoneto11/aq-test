@@ -39,14 +39,16 @@ _FINISHED_STATUSES = frozenset({"evaluating", "evaluation_failed", "completed"})
 
 def _require_worker_configuration() -> None:
     missing = [
-        name for name, value in (
+        name
+        for name, value in (
             ("LIVEKIT_URL", settings.LIVEKIT_URL),
             ("LIVEKIT_API_KEY", settings.LIVEKIT_API_KEY.get_secret_value()),
             ("LIVEKIT_API_SECRET", settings.LIVEKIT_API_SECRET.get_secret_value()),
             ("OPENROUTER_API_KEY", settings.OPENROUTER_API_KEY.get_secret_value()),
             ("DEEPGRAM_API_KEY", settings.DEEPGRAM_API_KEY.get_secret_value()),
             ("ELEVEN_API_KEY", settings.ELEVEN_API_KEY.get_secret_value()),
-        ) if not value.strip()
+        )
+        if not value.strip()
     ]
     if missing:
         raise RuntimeError(f"Voice worker requires configuration: {', '.join(missing)}")
@@ -67,7 +69,7 @@ def _dispatch_ids(ctx: JobContext) -> tuple[UUID, UUID] | None:
         run_id = UUID(data["run_id"])
         if not ctx.job.id or ctx.job.room.name != f"interview-{interview_id}-{run_id}":
             return None
-    except (ValueError, TypeError, AttributeError):
+    except ValueError, TypeError, AttributeError:
         return None
     return interview_id, run_id
 
@@ -83,8 +85,11 @@ class _VoiceJob:
         self.db = SqlDBClientAdapter(settings.DATABASE_URL, settings.AUTOCOMMIT)
         self.gateway = LiveKitGateway()
         self.voice = VoiceSessionService(
-            self.db, self.gateway, server_url=settings.LIVEKIT_URL,
-            max_active=settings.VOICE_MAX_ACTIVE, lease_seconds=settings.VOICE_LEASE_SECONDS,
+            self.db,
+            self.gateway,
+            server_url=settings.LIVEKIT_URL,
+            max_active=settings.VOICE_MAX_ACTIVE,
+            lease_seconds=settings.VOICE_LEASE_SECONDS,
         )
         self.controller: InterviewerAgent | None = None
         self.session: AgentSession[None] | None = None
@@ -123,15 +128,21 @@ class _VoiceJob:
 
     async def _reserved_room(self) -> bool:
         async with self.db.begin_session() as session:
-            row = await session.scalar(sa.select(Interview).where(Interview.id == self.interview_id))
+            row = await session.scalar(
+                sa.select(Interview).where(Interview.id == self.interview_id)
+            )
             return bool(
-                row is not None and row.run_id == self.run_id
-                and row.room_name == self.room_name and row.status in ("created", "active", "paused")
+                row is not None
+                and row.run_id == self.run_id
+                and row.room_name == self.room_name
+                and row.status in ("created", "active", "paused")
             )
 
     async def _run_state(self) -> tuple[UUID | None, str | None, str | None]:
         async with self.db.begin_session() as session:
-            row = await session.scalar(sa.select(Interview).where(Interview.id == self.interview_id))
+            row = await session.scalar(
+                sa.select(Interview).where(Interview.id == self.interview_id)
+            )
             if row is None:
                 return None, None, None
             return row.run_id, row.worker_job_id, row.status
@@ -141,7 +152,11 @@ class _VoiceJob:
             return
         try:
             run_id, job_id, status = await self._run_state()
-            if run_id == self.run_id and job_id == self.job_id and status in _FINISHED_STATUSES:
+            if (
+                run_id == self.run_id
+                and job_id == self.job_id
+                and status in _FINISHED_STATUSES
+            ):
                 self.reason = "completed"
                 controller = self.controller
                 if controller is not None:
@@ -152,7 +167,9 @@ class _VoiceJob:
                         await asyncio.sleep(0.25)
                     else:
                         if not self.stop.is_set():
-                            logger.warning("Final interview speech did not finish before shutdown")
+                            logger.warning(
+                                "Final interview speech did not finish before shutdown"
+                            )
                 self.stop.set()
                 return
             if run_id != self.run_id or job_id != self.job_id:
@@ -171,12 +188,16 @@ class _VoiceJob:
         try:
             while not self.stop.is_set():
                 try:
-                    await asyncio.wait_for(self.stop.wait(), timeout=settings.VOICE_HEARTBEAT_SECONDS)
+                    await asyncio.wait_for(
+                        self.stop.wait(), timeout=settings.VOICE_HEARTBEAT_SECONDS
+                    )
                     return
                 except TimeoutError:
                     pass
                 try:
-                    current = await self.voice.renew_lease(self.interview_id, self.run_id, self.job_id)
+                    current = await self.voice.renew_lease(
+                        self.interview_id, self.run_id, self.job_id
+                    )
                 except Exception:
                     logger.exception("Voice lease renewal failed")
                     self._stop("lease_lost")
@@ -196,7 +217,8 @@ class _VoiceJob:
         stopped = asyncio.create_task(self.stop.wait(), name="interview_join_stopped")
         try:
             done, _ = await asyncio.wait(
-                (join, stopped), timeout=max(0, _JOIN_SECONDS - (monotonic() - entered_at)),
+                (join, stopped),
+                timeout=max(0, _JOIN_SECONDS - (monotonic() - entered_at)),
                 return_when=asyncio.FIRST_COMPLETED,
             )
             if stopped in done and self.stop.is_set():
@@ -207,7 +229,10 @@ class _VoiceJob:
                 except Exception:
                     self._stop("voice_dispatch_failed")
                     raise
-                return not self.stop.is_set() and self.candidate_identity in self.ctx.room.remote_participants
+                return (
+                    not self.stop.is_set()
+                    and self.candidate_identity in self.ctx.room.remote_participants
+                )
             self._stop("join_timeout")
             return False
         finally:
@@ -226,15 +251,21 @@ class _VoiceJob:
         self.ctx.add_shutdown_callback(self.close)
         if not await self._reserved_room():
             return
-        self.claimed = await self.voice.claim_run(self.interview_id, self.run_id, self.job_id)
+        self.claimed = await self.voice.claim_run(
+            self.interview_id, self.run_id, self.job_id
+        )
         if not self.claimed:
             return
-        self.heartbeat = asyncio.create_task(self._heartbeat(), name="interview_voice_lease")
+        self.heartbeat = asyncio.create_task(
+            self._heartbeat(), name="interview_voice_lease"
+        )
         self.ctx.room.on("participant_disconnected", self._candidate_disconnected)
         self.ctx.room.on("disconnected", self._room_disconnected)
         if not await self._await_candidate(entered_at):
             return
-        if not await self.voice.renew_lease(self.interview_id, self.run_id, self.job_id):
+        if not await self.voice.renew_lease(
+            self.interview_id, self.run_id, self.job_id
+        ):
             await self._after_lease_loss()
             return
         if self.stop.is_set():
@@ -262,14 +293,19 @@ class _VoiceJob:
                 self.db, planning_model, evaluation_llm=evaluation_model
             )
             self.controller = InterviewerAgent(
-                self.interview_id, self.run_id, self.job_id, interviews, self.voice,
+                self.interview_id,
+                self.run_id,
+                self.job_id,
+                interviews,
+                self.voice,
             )
         except Exception:
             self._stop("llm_unavailable")
             raise
         try:
             speech_to_text = deepgram.STT(
-                model=settings.DEEPGRAM_MODEL, language="en",
+                model=settings.DEEPGRAM_MODEL,
+                language="en",
                 api_key=settings.DEEPGRAM_API_KEY.get_secret_value(),
             )
             vad = silero.VAD.load()
@@ -278,7 +314,8 @@ class _VoiceJob:
             raise
         try:
             text_to_speech = elevenlabs.TTS(
-                model=settings.ELEVEN_MODEL, voice_id=settings.ELEVEN_VOICE_ID,
+                model=settings.ELEVEN_MODEL,
+                voice_id=settings.ELEVEN_VOICE_ID,
                 api_key=settings.ELEVEN_API_KEY.get_secret_value(),
             )
         except Exception:
@@ -315,12 +352,16 @@ class _VoiceJob:
         session.on("close", self._session_closed)
         session.on("user_state_changed", self._user_state_changed)
         self.controller.bind_session(session)
-        if not self.stop.is_set() and await self.voice.renew_lease(self.interview_id, self.run_id, self.job_id):
+        if not self.stop.is_set() and await self.voice.renew_lease(
+            self.interview_id, self.run_id, self.job_id
+        ):
             await session.start(
-                agent=self.controller, room=self.ctx.room,
+                agent=self.controller,
+                room=self.ctx.room,
                 room_options=room_io.RoomOptions(
                     participant_identity=self.candidate_identity,
-                    text_input=False, video_input=False,
+                    text_input=False,
+                    video_input=False,
                 ),
                 record=False,
             )
@@ -351,13 +392,18 @@ class _VoiceJob:
                 logger.exception("Could not drain interview controller")
             if self.claimed:
                 try:
-                    await asyncio.wait_for(self.gateway.close_room(self.room_name), timeout=8)
+                    await asyncio.wait_for(
+                        self.gateway.close_room(self.room_name), timeout=8
+                    )
                 except Exception:
                     logger.exception("Could not close interview room")
                     self.reason = "voice_dispatch_failed"
                 try:
                     await self.voice.release_run(
-                        self.interview_id, self.run_id, self.job_id, self.reason,
+                        self.interview_id,
+                        self.run_id,
+                        self.job_id,
+                        self.reason,
                     )
                 except Exception:
                     logger.exception("Could not release interview run")

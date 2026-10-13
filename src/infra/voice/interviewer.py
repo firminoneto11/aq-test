@@ -9,12 +9,20 @@ from typing import Any, AsyncIterable, Coroutine
 from uuid import UUID
 
 from livekit.agents import (
-    Agent, AgentSession, ModelSettings, llm, stt, tts,
+    Agent,
+    AgentSession,
+    ModelSettings,
+    llm,
+    stt,
+    tts,
 )
 from livekit.agents.types import TimedString
 from livekit.agents.voice import SpeechHandle
 from livekit.agents.voice.events import (
-    AgentStateChangedEvent, CloseEvent, ErrorEvent, SpeechCreatedEvent,
+    AgentStateChangedEvent,
+    CloseEvent,
+    ErrorEvent,
+    SpeechCreatedEvent,
     UserStateChangedEvent,
 )
 
@@ -41,10 +49,17 @@ class InterviewerAgent(Agent):
     """Persist finalized input before authorizing any next question for synthesis."""
 
     def __init__(
-        self, interview_id: UUID, run_id: UUID, job_id: str,
-        interviews: InterviewService, voice: VoiceSessionService,
+        self,
+        interview_id: UUID,
+        run_id: UUID,
+        job_id: str,
+        interviews: InterviewService,
+        voice: VoiceSessionService,
     ) -> None:
-        super().__init__(instructions="Speak only the exact server-approved interview text.", tools=[])
+        super().__init__(
+            instructions="Speak only the exact server-approved interview text.",
+            tools=[],
+        )
         self._interview_id = interview_id
         self._run_id = run_id
         self._job_id = job_id
@@ -135,19 +150,28 @@ class InterviewerAgent(Agent):
             return
         handle = self._session.current_speech
         slot = self._handles.get(handle.id) if handle is not None else None
-        if handle is None or slot is None or slot.reply is None or slot.reply.question_id is None:
+        if (
+            handle is None
+            or slot is None
+            or slot.reply is None
+            or slot.reply.question_id is None
+        ):
             return
         if not self._current(slot.epoch):
             handle.interrupt(force=True)
             return
         question_id = slot.reply.question_id
-        self._answerable = question_id  # Capture speech-start identity before another STT turn.
+        self._answerable = (
+            question_id  # Capture speech-start identity before another STT turn.
+        )
         slot.begun = self._retain(self._begin(question_id, handle))
         slot.begun.add_done_callback(lambda _: slot.settled.set())
 
     async def _begin(self, question_id: UUID, handle: SpeechHandle) -> bool:
         try:
-            begun = await self._interviews.begin_question(self._interview_id, self._run_id, question_id)
+            begun = await self._interviews.begin_question(
+                self._interview_id, self._run_id, question_id
+            )
         except Exception:
             logger.exception("Could not commit spoken question")
             handle.interrupt(force=True)
@@ -177,9 +201,12 @@ class InterviewerAgent(Agent):
                 await slot.begun
             if slot.reply is None:
                 return
-            source = "tts_aligned" if slot.aligned and not slot.estimated else "sdk_estimate"
+            source = (
+                "tts_aligned" if slot.aligned and not slot.estimated else "sdk_estimate"
+            )
             assistant_items = (
-                item for item in handle.chat_items
+                item
+                for item in handle.chat_items
                 if isinstance(item, llm.ChatMessage) and item.role == "assistant"
             )
             observed = False
@@ -189,20 +216,33 @@ class InterviewerAgent(Agent):
                     continue
                 observed = True
                 await self._interviews.observe_assistant(
-                    self._interview_id, self._run_id, item.id,
-                    slot.reply.question_id, slot.reply.kind, text,
-                    handle.interrupted or item.interrupted or handle.exception() is not None,
+                    self._interview_id,
+                    self._run_id,
+                    item.id,
+                    slot.reply.question_id,
+                    slot.reply.kind,
+                    text,
+                    handle.interrupted
+                    or item.interrupted
+                    or handle.exception() is not None,
                     source,
                 )
                 self._send_hint()
-            if not observed and slot.reply.question_id is not None and (
-                handle.interrupted or handle.exception() is not None
+            if (
+                not observed
+                and slot.reply.question_id is not None
+                and (handle.interrupted or handle.exception() is not None)
             ):
                 # No assistant item means no spoken text, not a fabricated transcript.
                 await self._interviews.observe_assistant(
-                    self._interview_id, self._run_id, handle.id,
-                    slot.reply.question_id, slot.reply.kind, "",
-                    handle.interrupted, source,
+                    self._interview_id,
+                    self._run_id,
+                    handle.id,
+                    slot.reply.question_id,
+                    slot.reply.kind,
+                    "",
+                    handle.interrupted,
+                    source,
                 )
                 self._send_hint()
             if handle.exception() is not None and not self._stopping:
@@ -235,7 +275,9 @@ class InterviewerAgent(Agent):
         self._epoch += 1
         self._silence.set()
         try:
-            await self._voice.release_run(self._interview_id, self._run_id, self._job_id, reason)
+            await self._voice.release_run(
+                self._interview_id, self._run_id, self._job_id, reason
+            )
             await self._flush_hint(self._send_hint())
         finally:
             if self._session is not None:
@@ -251,8 +293,10 @@ class InterviewerAgent(Agent):
         if task is not None:
             try:
                 await asyncio.wait_for(asyncio.shield(task), timeout=5)
-            except (Exception, asyncio.CancelledError):
-                logger.exception("Interview state hint could not be flushed before shutdown")
+            except Exception, asyncio.CancelledError:
+                logger.exception(
+                    "Interview state hint could not be flushed before shutdown"
+                )
 
     async def _publish_hint(self) -> None:
         state = await self._interviews.voice_state(self._interview_id, self._run_id)
@@ -262,19 +306,27 @@ class InterviewerAgent(Agent):
             room = self._session.room_io.room
             if room.isconnected():
                 await room.local_participant.publish_data(
-                    json.dumps({
-                        "type": "interview.state_changed",
-                        "interview_id": str(self._interview_id),
-                        "revision": state.revision,
-                    }),
-                    reliable=True, topic="interview.state",
+                    json.dumps(
+                        {
+                            "type": "interview.state_changed",
+                            "interview_id": str(self._interview_id),
+                            "revision": state.revision,
+                        }
+                    ),
+                    reliable=True,
+                    topic="interview.state",
                 )
         except Exception:
             # Durable GET is authoritative; a media disconnect cannot roll back a commit.
             logger.exception("Could not publish interview state invalidation")
 
     def _current(self, epoch: int) -> bool:
-        return not self._closed and not self._stopping and self._epoch == epoch and not self._speaking
+        return (
+            not self._closed
+            and not self._stopping
+            and self._epoch == epoch
+            and not self._speaking
+        )
 
     def _captured_question(self, message: llm.ChatMessage) -> tuple[UUID | None, int]:
         if not self._captured:
@@ -293,23 +345,34 @@ class InterviewerAgent(Agent):
         return question_id, epoch
 
     async def on_user_turn_completed(
-        self, turn_ctx: llm.ChatContext, new_message: llm.ChatMessage,
+        self,
+        turn_ctx: llm.ChatContext,
+        new_message: llm.ChatMessage,
     ) -> None:
         if new_message.id not in self._seen_turn_ids:
             self._seen_turn_ids.add(new_message.id)
-            self._finalized_turns += 1  # Fence recovery before a distinct hook awaits the DB.
+            self._finalized_turns += (
+                1  # Fence recovery before a distinct hook awaits the DB.
+            )
         finalized_turn = self._finalized_turns
         captured, epoch = self._captured_question(new_message)
         # A begun question must be durable before a rapid interruption can commit its answer.
-        begins = [slot.begun for slot in self._handles.values()
-                  if slot.begun is not None and slot.reply is not None
-                  and slot.reply.question_id == captured]
+        begins = [
+            slot.begun
+            for slot in self._handles.values()
+            if slot.begun is not None
+            and slot.reply is not None
+            and slot.reply.question_id == captured
+        ]
         if begins:
             await asyncio.gather(*begins)
         try:
             result = await self._interviews.record_turn(
-                self._interview_id, self._run_id, new_message.id,
-                captured, new_message.text_content or "",
+                self._interview_id,
+                self._run_id,
+                new_message.id,
+                captured,
+                new_message.text_content or "",
             )
         except Exception:
             logger.exception("Could not commit finalized candidate turn")
@@ -342,14 +405,22 @@ class InterviewerAgent(Agent):
         original SDK handle (or its speaking commit) and a quiet grace period before
         taking the planning mutex; the normal llm_node always gets first chance.
         """
-        while not self._closed and not self._stopping and self._finalized_turns == finalized_turn:
+        while (
+            not self._closed
+            and not self._stopping
+            and self._finalized_turns == finalized_turn
+        ):
             try:
                 await asyncio.wait_for(slot.settled.wait(), timeout=2)
             except TimeoutError:
                 pass
             if slot.begun is not None and slot.begun.done() and slot.begun.result():
                 return
-            if slot.reply is not None and slot.reply.kind == "closing" and self._closing_scheduled:
+            if (
+                slot.reply is not None
+                and slot.reply.kind == "closing"
+                and self._closing_scheduled
+            ):
                 return
             if slot.handle is not None and not slot.handle.done():
                 slot.settled.clear()
@@ -358,10 +429,10 @@ class InterviewerAgent(Agent):
                 return
             epoch = self._epoch
             await asyncio.sleep(2)  # Let a real second turn's finalized hook win.
-            if (not self._current(epoch) or self._finalized_turns != finalized_turn):
+            if not self._current(epoch) or self._finalized_turns != finalized_turn:
                 continue
             async with self._planning:
-                if (not self._current(epoch) or self._finalized_turns != finalized_turn):
+                if not self._current(epoch) or self._finalized_turns != finalized_turn:
                     continue
                 if slot.begun is not None and slot.begun.done() and slot.begun.result():
                     return
@@ -371,8 +442,12 @@ class InterviewerAgent(Agent):
                 slot.enabled = False
                 try:
                     reply = await self._interviews.prepare_reply(
-                        self._interview_id, self._run_id,
-                        lambda: self._current(epoch) and self._finalized_turns == finalized_turn,
+                        self._interview_id,
+                        self._run_id,
+                        lambda: (
+                            self._current(epoch)
+                            and self._finalized_turns == finalized_turn
+                        ),
                     )
                 except Exception:
                     logger.exception("Could not recover saved candidate answer")
@@ -404,17 +479,27 @@ class InterviewerAgent(Agent):
     async def _stop_if_planning_failed(self) -> None:
         state = await self._interviews.voice_state(self._interview_id, self._run_id)
         if (
-            state is not None and state.run_current and state.status == "paused"
+            state is not None
+            and state.run_current
+            and state.status == "paused"
             and state.last_error_code in {"llm_unavailable", "llm_invalid_output"}
         ):
             self._retain(self._end_media("disconnect"))
 
     async def llm_node(
-        self, chat_ctx: llm.ChatContext, tools: list[llm.Tool],
+        self,
+        chat_ctx: llm.ChatContext,
+        tools: list[llm.Tool],
         model_settings: ModelSettings,
     ) -> Any:
-        user = next((item for item in reversed(chat_ctx.items)
-                     if isinstance(item, llm.ChatMessage) and item.role == "user"), None)
+        user = next(
+            (
+                item
+                for item in reversed(chat_ctx.items)
+                if isinstance(item, llm.ChatMessage) and item.role == "user"
+            ),
+            None,
+        )
         slot = self._reply_by_id.get(user.id) if user is not None else None
         if slot is None or not slot.enabled or not self._current(slot.epoch):
             return None
@@ -423,7 +508,8 @@ class InterviewerAgent(Agent):
                 return None
             try:
                 reply = await self._interviews.prepare_reply(
-                    self._interview_id, self._run_id,
+                    self._interview_id,
+                    self._run_id,
                     lambda: self._current(slot.epoch),
                 )
             except Exception:
@@ -442,7 +528,11 @@ class InterviewerAgent(Agent):
                 return None
             if not await self._wait_for_silence():
                 return None
-            if not self._current(slot.epoch) or slot.handle is None or slot.handle.interrupted:
+            if (
+                not self._current(slot.epoch)
+                or slot.handle is None
+                or slot.handle.interrupted
+            ):
                 if reply.kind == "closing":
                     self._defer_closing(reply)
                 return None
@@ -484,7 +574,9 @@ class InterviewerAgent(Agent):
                 await asyncio.wait_for(self._silence.wait(), timeout=2)
                 return not self._closed and not self._stopping
             except TimeoutError:
-                state = await self._interviews.voice_state(self._interview_id, self._run_id)
+                state = await self._interviews.voice_state(
+                    self._interview_id, self._run_id
+                )
                 if state is None or not state.run_current:
                     return False
         return False
@@ -505,7 +597,9 @@ class InterviewerAgent(Agent):
         if self._session is None:
             raise RuntimeError("Bind an AgentSession before speaking")
         # speech_created fires inside say(), not after its SpeechHandle is returned.
-        self._say_slot = _ReplySlot(message_id="", epoch=epoch, enabled=True, reply=reply)
+        self._say_slot = _ReplySlot(
+            message_id="", epoch=epoch, enabled=True, reply=reply
+        )
         try:
             handle = self._session.say(reply.text)
         finally:
@@ -525,7 +619,9 @@ class InterviewerAgent(Agent):
             self._send_hint()
 
     async def transcription_node(
-        self, text: AsyncIterable[str | TimedString], model_settings: ModelSettings,
+        self,
+        text: AsyncIterable[str | TimedString],
+        model_settings: ModelSettings,
     ) -> AsyncIterable[str | TimedString]:
         async for chunk in text:
             if self._session is not None:
@@ -547,12 +643,19 @@ class InterviewerAgent(Agent):
                 if not await self._wait_for_silence():
                     return
                 epoch = self._epoch
-                state = await self._interviews.voice_state(self._interview_id, self._run_id)
-                if state is None or not state.run_current or state.status not in {"created", "active", "paused"}:
+                state = await self._interviews.voice_state(
+                    self._interview_id, self._run_id
+                )
+                if (
+                    state is None
+                    or not state.run_current
+                    or state.status not in {"created", "active", "paused"}
+                ):
                     return
                 self._answerable = state.answerable_question_id
                 reply = await self._interviews.prepare_reply(
-                    self._interview_id, self._run_id,
+                    self._interview_id,
+                    self._run_id,
                     lambda: self._current(epoch),
                 )
                 self._send_hint()
@@ -573,12 +676,18 @@ class InterviewerAgent(Agent):
     async def interview_finished(self) -> bool:
         """Keep the media run until closing, evaluation and hints are committed."""
         if (
-            self._closing_handle is None or not self._closing_handle.done()
-            or not self._closing_observed or any(not task.done() for task in self._tasks)
+            self._closing_handle is None
+            or not self._closing_handle.done()
+            or not self._closing_observed
+            or any(not task.done() for task in self._tasks)
         ):
             return False
         state = await self._interviews.voice_state(self._interview_id, self._run_id)
-        return state is not None and state.status in {"evaluating", "evaluation_failed", "completed"}
+        return state is not None and state.status in {
+            "evaluating",
+            "evaluation_failed",
+            "completed",
+        }
 
     async def close(self) -> None:
         self._closed = True

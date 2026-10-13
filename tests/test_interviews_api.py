@@ -24,7 +24,9 @@ async def test_job_selection_create_retry_and_private_results(
     assert jobs_response.status_code == 200
     jobs = jobs_response.json()["jobs"]
     assert [job["slug"] for job in jobs] == [
-        "backend-engineer", "data-analyst", "frontend-engineer"
+        "backend-engineer",
+        "data-analyst",
+        "frontend-engineer",
     ]
     assert all(job["title"] and job["description"] for job in jobs)
     unauthorized = await http_client.post(
@@ -46,6 +48,7 @@ async def test_job_selection_create_retry_and_private_results(
     stranger = await auth.create_user(stranger_email, password)
     interview_id = None
     try:
+
         async def headers(email: str) -> dict[str, str]:
             response = await http_client.post(
                 "/api/v1/auth/token", data={"username": email, "password": password}
@@ -96,7 +99,10 @@ async def test_job_selection_create_retry_and_private_results(
         )
         assert evaluation.status_code == 200
         assert evaluation.json() == {
-            "status": "not_ready", "result": None, "error_code": None, "can_retry": False
+            "status": "not_ready",
+            "result": None,
+            "error_code": None,
+            "can_retry": False,
         }
         premature = await http_client.post(
             f"{path}/{interview_id}/evaluation", headers=owner_headers

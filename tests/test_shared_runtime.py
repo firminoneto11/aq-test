@@ -44,6 +44,9 @@ async def test_binding_once_and_new_tasks_reuse_services_without_inheritance(
         context.bind(db=shadow_db, error_tracker=shadow_tracker)
 
     # A fresh task inherits no ContextVars, but receives the app-wide services.
-    assert await Context().run(asyncio.create_task, access_services()) == (db, global_tracker)
+    assert await Context().run(asyncio.create_task, access_services()) == (
+        db,
+        global_tracker,
+    )
     assert context.get_db() is db
     assert context.get_error_tracker() is global_tracker

@@ -40,7 +40,9 @@ async def test_rollback_commit_and_soft_delete_are_visible_across_connections(
     other = SqlDBClientAdapter(settings.DATABASE_URL, autocommit=True)
     await other.connect()
     email = f"transaction-{uuid4()}@example.com"
-    password_hash = await PasswordAdapter().hash_password("correct-horse-battery-staple")
+    password_hash = await PasswordAdapter().hash_password(
+        "correct-horse-battery-staple"
+    )
     persisted_id = None
     try:
         with pytest.raises(RuntimeError):
@@ -50,7 +52,9 @@ async def test_rollback_commit_and_soft_delete_are_visible_across_connections(
                 raise RuntimeError("rollback this incomplete signup")
 
         async with other.begin_session() as session:
-            assert await session.scalar(sa.select(User).where(User.email == email)) is None
+            assert (
+                await session.scalar(sa.select(User).where(User.email == email)) is None
+            )
 
         async with db.begin_session() as session:
             user = User(email=email, password_hash=password_hash)
@@ -68,7 +72,10 @@ async def test_rollback_commit_and_soft_delete_are_visible_across_connections(
             await session.delete(user)
 
         async with other.begin_session() as session:
-            assert await session.scalar(sa.select(User).where(User.id == persisted_id)) is None
+            assert (
+                await session.scalar(sa.select(User).where(User.id == persisted_id))
+                is None
+            )
             deleted = await session.scalar(
                 sa.select(User)
                 .where(User.id == persisted_id)
@@ -88,23 +95,27 @@ async def test_sqlite_memory_sessions_share_tables_and_enforce_foreign_keys() ->
     try:
         await local.connect()  # Reconnecting must not reset an in-memory database.
         async with local.begin_session() as session:
-            await session.execute(sa.text("CREATE TABLE owners (id INTEGER PRIMARY KEY)"))
-            await session.execute(sa.text(
-                "CREATE TABLE records (id INTEGER PRIMARY KEY, owner_id INTEGER "
-                "NOT NULL REFERENCES owners(id))"
-            ))
+            await session.execute(
+                sa.text("CREATE TABLE owners (id INTEGER PRIMARY KEY)")
+            )
+            await session.execute(
+                sa.text(
+                    "CREATE TABLE records (id INTEGER PRIMARY KEY, owner_id INTEGER "
+                    "NOT NULL REFERENCES owners(id))"
+                )
+            )
 
         with pytest.raises(IntegrityError):
             async with local.begin_session() as session:
-                await session.execute(sa.text(
-                    "INSERT INTO records (id, owner_id) VALUES (1, 404)"
-                ))
+                await session.execute(
+                    sa.text("INSERT INTO records (id, owner_id) VALUES (1, 404)")
+                )
 
         async with local.begin_session() as session:
             await session.execute(sa.text("INSERT INTO owners (id) VALUES (9)"))
-            await session.execute(sa.text(
-                "INSERT INTO records (id, owner_id) VALUES (1, 9)"
-            ))
+            await session.execute(
+                sa.text("INSERT INTO records (id, owner_id) VALUES (1, 9)")
+            )
         async with local.begin_session() as session:
             assert await session.scalar(sa.text("SELECT owner_id FROM records")) == 9
     finally:
@@ -114,7 +125,9 @@ async def test_sqlite_memory_sessions_share_tables_and_enforce_foreign_keys() ->
         await local.ping()
 
 
-async def test_failed_connection_cannot_leak_a_live_database_engine(tmp_path: Path) -> None:
+async def test_failed_connection_cannot_leak_a_live_database_engine(
+    tmp_path: Path,
+) -> None:
     missing_parent = tmp_path / "not-created" / "test.sqlite3"
     local = SqlDBClientAdapter(f"sqlite+aiosqlite:///{missing_parent}", autocommit=True)
     with pytest.raises(ConnectionError):

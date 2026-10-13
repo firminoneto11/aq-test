@@ -20,7 +20,9 @@ from .interviews import (
 )
 
 _UNFINISHED = frozenset({"created", "active", "paused"})
-_ADMISSION_LOCK = 0x4151494E54455256  # Shared PostgreSQL transaction lock across API processes.
+_ADMISSION_LOCK = (
+    0x4151494E54455256  # Shared PostgreSQL transaction lock across API processes.
+)
 logger = logging.get_logger()
 _GRANT_SECONDS = 300
 _WORKER_ERRORS = frozenset(
@@ -34,7 +36,9 @@ _WORKER_ERRORS = frozenset(
         "voice_dispatch_failed",
     }
 )
-_NORMAL_RELEASES = frozenset({"disconnect", "idle", "completed", "cancelled", "replaced"})
+_NORMAL_RELEASES = frozenset(
+    {"disconnect", "idle", "completed", "cancelled", "replaced"}
+)
 
 
 class ConnectionPending(BaseModel):
@@ -63,15 +67,24 @@ ConnectionResponse = ConnectionGrant | ConnectionPending
 
 
 class VoiceSessionService:
-    def __init__(self, db: SqlDBClientPort, gateway: VoiceGatewayPort | None, *,
-                 server_url: str = "", max_active: int = 2, lease_seconds: int = 30):
+    def __init__(
+        self,
+        db: SqlDBClientPort,
+        gateway: VoiceGatewayPort | None,
+        *,
+        server_url: str = "",
+        max_active: int = 2,
+        lease_seconds: int = 30,
+    ):
         self._db = db
         self._gateway = gateway
         self._server_url = server_url
         self._max_active = max_active
         self._lease_seconds = lease_seconds
 
-    async def connect(self, owner_id: UUID, interview_id: UUID, request_id: UUID) -> ConnectionResponse:
+    async def connect(
+        self, owner_id: UUID, interview_id: UUID, request_id: UUID
+    ) -> ConnectionResponse:
         gateway = self._gateway
         # Authentication and terminal state always take precedence over configuration.
         async with self._db.begin_session() as session:
@@ -85,9 +98,13 @@ class VoiceSessionService:
         async with self._db.begin_session() as session:
             # The lock serializes the aggregate capacity check and reservation across
             # interviews/processes; row locking alone cannot protect this aggregate.
-            await session.execute(sa.select(sa.func.pg_advisory_xact_lock(_ADMISSION_LOCK)))
+            await session.execute(
+                sa.select(sa.func.pg_advisory_xact_lock(_ADMISSION_LOCK))
+            )
             interview = await session.scalar(
-                sa.select(Interview).where(Interview.id == interview_id, Interview.user_id == owner_id).with_for_update()
+                sa.select(Interview)
+                .where(Interview.id == interview_id, Interview.user_id == owner_id)
+                .with_for_update()
             )
             if interview is None:
                 raise GenericException("Interview not found", 404)
@@ -95,9 +112,14 @@ class VoiceSessionService:
                 raise GenericException("Interview cannot be resumed", 409)
             now = datetime.now(UTC)
             if interview.connect_request_id == request_id:
-                if (interview.run_id is None or interview.lease_expires_at is None
-                        or interview.lease_expires_at <= now or interview.connection_state == "failed"
-                        or interview.grant_expires_at is None or interview.grant_expires_at <= now):
+                if (
+                    interview.run_id is None
+                    or interview.lease_expires_at is None
+                    or interview.lease_expires_at <= now
+                    or interview.connection_state == "failed"
+                    or interview.grant_expires_at is None
+                    or interview.grant_expires_at <= now
+                ):
                     raise GenericException("Connection attempt expired", 409)
                 run_id = interview.run_id
                 room_name = interview.room_name
@@ -109,7 +131,9 @@ class VoiceSessionService:
                 retry = True
             else:
                 active = await session.scalar(
-                    sa.select(sa.func.count()).select_from(Interview).where(
+                    sa.select(sa.func.count())
+                    .select_from(Interview)
+                    .where(
                         Interview.id != interview_id,
                         Interview.status.in_(_UNFINISHED),
                         Interview.lease_expires_at > now,
@@ -148,13 +172,21 @@ class VoiceSessionService:
             await gateway.dispatch(room_name, interview_id, run_id)
             async with self._db.begin_session() as session:
                 interview = await session.scalar(
-                    sa.select(Interview).where(Interview.id == interview_id, Interview.user_id == owner_id).with_for_update()
+                    sa.select(Interview)
+                    .where(Interview.id == interview_id, Interview.user_id == owner_id)
+                    .with_for_update()
                 )
                 now = datetime.now(UTC)
-                if (interview is None or interview.status not in _UNFINISHED
-                        or interview.run_id != run_id or interview.connection_state != "provisioning"
-                        or interview.lease_expires_at is None or interview.lease_expires_at <= now
-                        or interview.grant_expires_at is None or interview.grant_expires_at <= now):
+                if (
+                    interview is None
+                    or interview.status not in _UNFINISHED
+                    or interview.run_id != run_id
+                    or interview.connection_state != "provisioning"
+                    or interview.lease_expires_at is None
+                    or interview.lease_expires_at <= now
+                    or interview.grant_expires_at is None
+                    or interview.grant_expires_at <= now
+                ):
                     raise GenericException("Voice service unavailable", 503)
                 expires_at = now + timedelta(seconds=_GRANT_SECONDS)
                 # Token signing is local/synchronous. A signer failure must not leave
@@ -233,8 +265,13 @@ class VoiceSessionService:
             state=state,
         )
 
-    async def _failed_attempt(self, interview_id: UUID, run_id: UUID, room_name: str,
-                              gateway: VoiceGatewayPort) -> None:
+    async def _failed_attempt(
+        self,
+        interview_id: UUID,
+        run_id: UUID,
+        room_name: str,
+        gateway: VoiceGatewayPort,
+    ) -> None:
         # Even if room deletion fails, a fenced worker loses its lease and shuts
         # down at its next heartbeat. Never undo a replacement or a natural finish.
         try:
@@ -245,7 +282,9 @@ class VoiceSessionService:
             )
         async with self._db.begin_session() as session:
             interview = await session.scalar(
-                sa.select(Interview).where(Interview.id == interview_id).with_for_update()
+                sa.select(Interview)
+                .where(Interview.id == interview_id)
+                .with_for_update()
             )
             if interview is None or interview.run_id != run_id:
                 return
@@ -260,7 +299,9 @@ class VoiceSessionService:
     async def end(self, owner_id: UUID, interview_id: UUID) -> InterviewState:
         async with self._db.begin_session() as session:
             interview = await session.scalar(
-                sa.select(Interview).where(Interview.id == interview_id, Interview.user_id == owner_id).with_for_update()
+                sa.select(Interview)
+                .where(Interview.id == interview_id, Interview.user_id == owner_id)
+                .with_for_update()
             )
             if interview is None:
                 raise GenericException("Interview not found", 404)
@@ -294,17 +335,31 @@ class VoiceSessionService:
             except Exception as exc:
                 async with self._db.begin_session() as session:
                     interview = await session.scalar(
-                        sa.select(Interview).where(Interview.id == interview_id, Interview.user_id == owner_id).with_for_update()
+                        sa.select(Interview)
+                        .where(
+                            Interview.id == interview_id, Interview.user_id == owner_id
+                        )
+                        .with_for_update()
                     )
-                    if interview is not None and interview.room_name == room_name and interview.run_id is None:
+                    if (
+                        interview is not None
+                        and interview.room_name == room_name
+                        and interview.run_id is None
+                    ):
                         interview.last_error_code = "voice_dispatch_failed"
                         interview.revision += 1
                 raise GenericException("Voice service unavailable", 503) from exc
             async with self._db.begin_session() as session:
                 interview = await session.scalar(
-                    sa.select(Interview).where(Interview.id == interview_id, Interview.user_id == owner_id).with_for_update()
+                    sa.select(Interview)
+                    .where(Interview.id == interview_id, Interview.user_id == owner_id)
+                    .with_for_update()
                 )
-                if interview is not None and interview.room_name == room_name and interview.run_id is None:
+                if (
+                    interview is not None
+                    and interview.room_name == room_name
+                    and interview.run_id is None
+                ):
                     interview.room_name = None
         async with self._db.begin_session() as session:
             return await build_interview_state(
@@ -313,13 +368,28 @@ class VoiceSessionService:
 
     async def claim_run(self, interview_id: UUID, run_id: UUID, job_id: str) -> bool:
         async with self._db.begin_session() as session:
-            interview = await session.scalar(sa.select(Interview).where(Interview.id == interview_id).with_for_update())
+            interview = await session.scalar(
+                sa.select(Interview)
+                .where(Interview.id == interview_id)
+                .with_for_update()
+            )
             now = datetime.now(UTC)
-            if (not job_id or interview is None or interview.run_id != run_id
-                    or interview.status not in _UNFINISHED or interview.connection_state == "failed"
-                    or interview.lease_expires_at is None or interview.lease_expires_at <= now
-                    or (interview.connection_state == "provisioning"
-                        and (interview.grant_expires_at is None or interview.grant_expires_at <= now))):
+            if (
+                not job_id
+                or interview is None
+                or interview.run_id != run_id
+                or interview.status not in _UNFINISHED
+                or interview.connection_state == "failed"
+                or interview.lease_expires_at is None
+                or interview.lease_expires_at <= now
+                or (
+                    interview.connection_state == "provisioning"
+                    and (
+                        interview.grant_expires_at is None
+                        or interview.grant_expires_at <= now
+                    )
+                )
+            ):
                 return False
             if interview.worker_job_id is not None:
                 return interview.worker_job_id == job_id
@@ -329,26 +399,50 @@ class VoiceSessionService:
 
     async def renew_lease(self, interview_id: UUID, run_id: UUID, job_id: str) -> bool:
         async with self._db.begin_session() as session:
-            interview = await session.scalar(sa.select(Interview).where(Interview.id == interview_id).with_for_update())
+            interview = await session.scalar(
+                sa.select(Interview)
+                .where(Interview.id == interview_id)
+                .with_for_update()
+            )
             now = datetime.now(UTC)
-            if (interview is None or not job_id or interview.run_id != run_id
-                    or interview.worker_job_id != job_id or interview.status not in _UNFINISHED
-                    or interview.connection_state == "failed" or interview.lease_expires_at is None
-                    or interview.lease_expires_at <= now
-                    or (interview.connection_state == "provisioning"
-                        and (interview.grant_expires_at is None or interview.grant_expires_at <= now))):
+            if (
+                interview is None
+                or not job_id
+                or interview.run_id != run_id
+                or interview.worker_job_id != job_id
+                or interview.status not in _UNFINISHED
+                or interview.connection_state == "failed"
+                or interview.lease_expires_at is None
+                or interview.lease_expires_at <= now
+                or (
+                    interview.connection_state == "provisioning"
+                    and (
+                        interview.grant_expires_at is None
+                        or interview.grant_expires_at <= now
+                    )
+                )
+            ):
                 return False
             interview.lease_expires_at = now + timedelta(seconds=self._lease_seconds)
             return True
 
-    async def release_run(self, interview_id: UUID, run_id: UUID, job_id: str,
-                          reason_code: str) -> None:
+    async def release_run(
+        self, interview_id: UUID, run_id: UUID, job_id: str, reason_code: str
+    ) -> None:
         if reason_code not in _WORKER_ERRORS and reason_code not in _NORMAL_RELEASES:
             raise ValueError("Unknown voice release reason")
         async with self._db.begin_session() as session:
-            interview = await session.scalar(sa.select(Interview).where(Interview.id == interview_id).with_for_update())
-            if (not job_id or interview is None or interview.run_id != run_id
-                    or interview.worker_job_id != job_id):
+            interview = await session.scalar(
+                sa.select(Interview)
+                .where(Interview.id == interview_id)
+                .with_for_update()
+            )
+            if (
+                not job_id
+                or interview is None
+                or interview.run_id != run_id
+                or interview.worker_job_id != job_id
+            ):
                 return
             interview.worker_job_id = None
             interview.lease_expires_at = None

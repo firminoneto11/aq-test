@@ -4,9 +4,9 @@ from typing import TYPE_CHECKING, cast
 from uuid import UUID, uuid4
 
 import jwt
+import pytest
 import sqlalchemy as sa
 from httpx import AsyncClient
-import pytest
 from pydantic import SecretStr
 
 from app.job_packs import seed_jobs
@@ -81,7 +81,9 @@ async def test_pending_connect_capacity_replacement_and_owner_enforcement(
     config, app = asgi_config
     await seed_jobs(db)
     async with db.begin_session() as session:
-        job = await session.scalar(sa.select(Job).where(Job.slug == "frontend-engineer"))
+        job = await session.scalar(
+            sa.select(Job).where(Job.slug == "frontend-engineer")
+        )
         assert job is not None
         job_id = job.id
     auth = AuthUseCase(
@@ -111,11 +113,16 @@ async def test_pending_connect_capacity_replacement_and_owner_enforcement(
             "/api/v1/auth/token", data={"username": owner_email, "password": password}
         )
         stranger_token = await http_client.post(
-            "/api/v1/auth/token", data={"username": stranger_email, "password": password}
+            "/api/v1/auth/token",
+            data={"username": stranger_email, "password": password},
         )
         assert owner_token.status_code == stranger_token.status_code == 200
-        owner_headers = {"Authorization": f"Bearer {owner_token.json()['access_token']}"}
-        stranger_headers = {"Authorization": f"Bearer {stranger_token.json()['access_token']}"}
+        owner_headers = {
+            "Authorization": f"Bearer {owner_token.json()['access_token']}"
+        }
+        stranger_headers = {
+            "Authorization": f"Bearer {stranger_token.json()['access_token']}"
+        }
         base = "/api/v1/interviews"
         request_id = str(uuid4())
         first = asyncio.create_task(
@@ -214,7 +221,9 @@ async def test_pending_connect_capacity_replacement_and_owner_enforcement(
         for interview_id in ids:
             await remove_interview(db, interview_id, owner.id, remove_user=False)
         async with db.begin_session() as session:
-            await session.execute(sa.delete(User).where(User.id.in_([owner.id, stranger.id])))
+            await session.execute(
+                sa.delete(User).where(User.id.in_([owner.id, stranger.id]))
+            )
 
 
 async def test_question_becomes_answerable_when_speaking_and_observations_dedupe(
@@ -251,32 +260,59 @@ async def test_question_becomes_answerable_when_speaking_and_observations_dedupe
         before = await service.get_state(user.id, state.id)
         assert before.answerable_question_id is None
         premature = await service.record_turn(
-            state.id, run_id, "too-early", question.question_id, "I started before audio."
+            state.id,
+            run_id,
+            "too-early",
+            question.question_id,
+            "I started before audio.",
         )
         assert premature.kind == "prelude"
         assert (await service.get_state(user.id, state.id)).answered_count == 0
         assert await service.begin_question(state.id, run_id, question.question_id)
         await service.observe_assistant(
-            state.id, run_id, "agent-utterance", question.question_id,
-            "question", question.text, True, "tts_aligned",
+            state.id,
+            run_id,
+            "agent-utterance",
+            question.question_id,
+            "question",
+            question.text,
+            True,
+            "tts_aligned",
         )
         await service.observe_assistant(
-            state.id, run_id, "agent-utterance", question.question_id,
-            "question", question.text, True, "tts_aligned",
+            state.id,
+            run_id,
+            "agent-utterance",
+            question.question_id,
+            "question",
+            question.text,
+            True,
+            "tts_aligned",
         )
         asked = await service.get_state(user.id, state.id)
         assert asked.answerable_question_id == question.question_id
         assert asked.current_question is not None
         assert asked.current_question.delivery_status == "interrupted"
         saved = await service.record_turn(
-            state.id, run_id, "candidate-answer", question.question_id,
+            state.id,
+            run_id,
+            "candidate-answer",
+            question.question_id,
             "I negotiated scope with the other team.",
         )
         assert saved.kind == "answer"
         transcript = await service.get_transcript(user.id, state.id)
-        assert len([entry for entry in transcript.messages if entry.speaker == "assistant"]) == 1
+        assert (
+            len(
+                [entry for entry in transcript.messages if entry.speaker == "assistant"]
+            )
+            == 1
+        )
         assert transcript.questions[0].answer is not None
-        assert transcript.questions[0].answer.text == "I negotiated scope with the other team."
+        assert (
+            transcript.questions[0].answer.text
+            == "I negotiated scope with the other team."
+        )
         assert [entry.sequence for entry in transcript.messages] == [1, 2, 3]
     finally:
         if interview_id is not None:

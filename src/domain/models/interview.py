@@ -35,14 +35,18 @@ class Job(TimeStampedBaseModel):
     pack: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False)
 
     @validates("pack")
-    def validate_pack(self, _key: str, value: RolePack | dict[str, object]) -> dict[str, object]:
+    def validate_pack(
+        self, _key: str, value: RolePack | dict[str, object]
+    ) -> dict[str, object]:
         return RolePack.model_validate(value).model_dump(mode="json")
 
 
 class Interview(TimeStampedBaseModel):
     __tablename__ = "interviews"
     __table_args__ = (
-        sa.UniqueConstraint("user_id", "create_request_id", name="uq_interviews_user_create_request"),
+        sa.UniqueConstraint(
+            "user_id", "create_request_id", name="uq_interviews_user_create_request"
+        ),
         sa.ForeignKeyConstraint(
             ["current_question_id"],
             ["interview_questions.id"],
@@ -93,12 +97,16 @@ class Interview(TimeStampedBaseModel):
     worker_job_id: Mapped[str | None] = mapped_column(sa.String(255))
     room_name: Mapped[str | None] = mapped_column(sa.String(255))
     connect_request_id: Mapped[UUID | None] = mapped_column(sa.UUID)
-    lease_expires_at: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True))
+    lease_expires_at: Mapped[datetime | None] = mapped_column(
+        sa.DateTime(timezone=True)
+    )
     connection_state: Mapped[ConnectionState] = mapped_column(
         sa.String(16), nullable=False, default="failed", server_default="failed"
     )
     grant_issued_at: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True))
-    grant_expires_at: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True))
+    grant_expires_at: Mapped[datetime | None] = mapped_column(
+        sa.DateTime(timezone=True)
+    )
     create_request_id: Mapped[UUID] = mapped_column(sa.UUID, nullable=False)
 
 
@@ -108,14 +116,18 @@ class InterviewQuestion(TimeStampedBaseModel):
         sa.UniqueConstraint(
             "interview_id", "bank_question_id", name="uq_interview_questions_bank_id"
         ),
-        sa.UniqueConstraint("interview_id", "ordinal", name="uq_interview_questions_ordinal"),
+        sa.UniqueConstraint(
+            "interview_id", "ordinal", name="uq_interview_questions_ordinal"
+        ),
         sa.ForeignKeyConstraint(
             ["source_answer_id"],
             ["interview_answers.id"],
             name="fk_interview_questions_source_answer_id_interview_answers",
             use_alter=True,
         ),
-        sa.CheckConstraint("ordinal BETWEEN 1 AND 10", name="ck_interview_questions_ordinal"),
+        sa.CheckConstraint(
+            "ordinal BETWEEN 1 AND 10", name="ck_interview_questions_ordinal"
+        ),
         sa.CheckConstraint(
             "kind IN ('bank', 'follow_up')", name="ck_interview_questions_kind"
         ),
@@ -157,7 +169,9 @@ class InterviewAnswer(TimeStampedBaseModel):
     __tablename__ = "interview_answers"
     __table_args__ = (
         sa.UniqueConstraint("question_id", name="uq_interview_answers_question_id"),
-        sa.CheckConstraint("revision >= 1", name="ck_interview_answers_revision_positive"),
+        sa.CheckConstraint(
+            "revision >= 1", name="ck_interview_answers_revision_positive"
+        ),
     )
 
     question_id: Mapped[UUID] = mapped_column(
@@ -175,11 +189,18 @@ class InterviewAnswer(TimeStampedBaseModel):
 class TranscriptEntry(TimeStampedBaseModel):
     __tablename__ = "transcript_entries"
     __table_args__ = (
-        sa.UniqueConstraint("interview_id", "sequence", name="uq_transcript_entries_sequence"),
         sa.UniqueConstraint(
-            "interview_id", "run_id", "sdk_message_id", name="uq_transcript_entries_sdk_message"
+            "interview_id", "sequence", name="uq_transcript_entries_sequence"
         ),
-        sa.CheckConstraint("sequence >= 1", name="ck_transcript_entries_sequence_positive"),
+        sa.UniqueConstraint(
+            "interview_id",
+            "run_id",
+            "sdk_message_id",
+            name="uq_transcript_entries_sdk_message",
+        ),
+        sa.CheckConstraint(
+            "sequence >= 1", name="ck_transcript_entries_sequence_positive"
+        ),
         sa.CheckConstraint(
             "speaker IN ('user', 'assistant')", name="ck_transcript_entries_speaker"
         ),
@@ -207,7 +228,9 @@ class TranscriptEntry(TimeStampedBaseModel):
     question_id: Mapped[UUID | None] = mapped_column(
         sa.ForeignKey("interview_questions.id")
     )
-    answer_id: Mapped[UUID | None] = mapped_column(sa.ForeignKey("interview_answers.id"))
+    answer_id: Mapped[UUID | None] = mapped_column(
+        sa.ForeignKey("interview_answers.id")
+    )
     kind: Mapped[TranscriptKind] = mapped_column(sa.String(16), nullable=False)
     processing_status: Mapped[ProcessingStatus] = mapped_column(
         sa.String(20), nullable=False
@@ -222,8 +245,12 @@ class TranscriptEntry(TimeStampedBaseModel):
 class InterviewDecision(TimeStampedBaseModel):
     __tablename__ = "interview_decisions"
     __table_args__ = (
-        sa.UniqueConstraint("interview_id", "revision", name="uq_interview_decisions_revision"),
-        sa.CheckConstraint("revision >= 0", name="ck_interview_decisions_revision_nonnegative"),
+        sa.UniqueConstraint(
+            "interview_id", "revision", name="uq_interview_decisions_revision"
+        ),
+        sa.CheckConstraint(
+            "revision >= 0", name="ck_interview_decisions_revision_nonnegative"
+        ),
         sa.CheckConstraint(
             "action IN ('ask', 'finish', 'pause')", name="ck_interview_decisions_action"
         ),

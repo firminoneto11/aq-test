@@ -39,7 +39,9 @@ async def create_interview(
     user: UserDep,
     interviews: InterviewDep,
 ) -> InterviewState:
-    state, created = await interviews.create(user.id, payload.job_id, payload.request_id)
+    state, created = await interviews.create(
+        user.id, payload.job_id, payload.request_id
+    )
     if not created:
         response.status_code = 200
     return state

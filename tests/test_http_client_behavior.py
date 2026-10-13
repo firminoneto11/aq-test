@@ -46,12 +46,17 @@ async def test_get_and_post_send_configured_request_and_accept_alternate_status(
 
     client = client_for(monkeypatch, handle)
     fetched, fetch_error = await client.get(
-        "items", query_params={"page": 2}, headers={"X-Trace": "get"},
+        "items",
+        query_params={"page": 2},
+        headers={"X-Trace": "get"},
         expected_status_codes=(200, 206),
     )
     created, create_error = await client.post(
-        "items", json={"name": "new"}, query_params={"draft": "yes"},
-        headers={"X-Trace": "post"}, expected_status_codes=(201,),
+        "items",
+        json={"name": "new"},
+        query_params={"draft": "yes"},
+        headers={"X-Trace": "post"},
+        expected_status_codes=(201,),
     )
 
     assert fetch_error is None
@@ -88,7 +93,11 @@ async def test_post_form_data_is_sent_as_form_not_json(
     assert error is None
     assert response.json() == {"accepted": True}
     assert len(observed) == 1
-    assert observed[0].headers["content-type"].startswith("application/x-www-form-urlencoded")
+    assert (
+        observed[0]
+        .headers["content-type"]
+        .startswith("application/x-www-form-urlencoded")
+    )
     assert observed[0].content == b"answer=two+words"
 
 

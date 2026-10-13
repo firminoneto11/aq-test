@@ -97,14 +97,18 @@ class EvaluationService:
         """Claim one attempt; a concurrent or stale attempt cannot alter the winner."""
         async with self.db.begin_session() as session:
             interview = await session.scalar(
-                sa.select(Interview).where(Interview.id == interview_id).with_for_update()
+                sa.select(Interview)
+                .where(Interview.id == interview_id)
+                .with_for_update()
             )
             if interview is None:
                 raise GenericException(detail="Interview not found", code=404)
             if interview.status == "completed":
                 return self._response(interview)
             if interview.status not in ("evaluating", "evaluation_failed"):
-                raise GenericException(detail="Interview is not ready for evaluation", code=409)
+                raise GenericException(
+                    detail="Interview is not ready for evaluation", code=409
+                )
             if self._has_live_claim(interview):
                 return self._response(interview)
 
@@ -122,10 +126,14 @@ class EvaluationService:
             # A model failure must never erase saved Q/A or a newer evaluator's result.
             async with self.db.begin_session() as session:
                 interview = await session.scalar(
-                    sa.select(Interview).where(Interview.id == interview_id).with_for_update()
+                    sa.select(Interview)
+                    .where(Interview.id == interview_id)
+                    .with_for_update()
                 )
                 if interview is None:
-                    raise GenericException(detail="Interview not found", code=404) from exc
+                    raise GenericException(
+                        detail="Interview not found", code=404
+                    ) from exc
                 if not self._owns_claim(interview, claim_id):
                     return self._response(interview)
                 interview.status = "evaluation_failed"
@@ -133,11 +141,15 @@ class EvaluationService:
                 interview.evaluation_claim_id = None
                 interview.evaluation_claim_expires_at = None
                 interview.revision += 1
-            raise GenericException(detail="Evaluation service unavailable", code=502) from exc
+            raise GenericException(
+                detail="Evaluation service unavailable", code=502
+            ) from exc
 
         async with self.db.begin_session() as session:
             interview = await session.scalar(
-                sa.select(Interview).where(Interview.id == interview_id).with_for_update()
+                sa.select(Interview)
+                .where(Interview.id == interview_id)
+                .with_for_update()
             )
             if interview is None:
                 raise GenericException(detail="Interview not found", code=404)
@@ -164,13 +176,17 @@ class EvaluationService:
 
     @classmethod
     def _owns_claim(cls, interview: Interview, claim_id: UUID) -> bool:
-        return interview.evaluation_claim_id == claim_id and cls._has_live_claim(interview)
+        return interview.evaluation_claim_id == claim_id and cls._has_live_claim(
+            interview
+        )
 
     @classmethod
     def _response(cls, interview: Interview) -> EvaluationResponse:
         if interview.status == "completed":
             if interview.evaluation is None:
-                raise GenericException(detail="Evaluation result is unavailable", code=500)
+                raise GenericException(
+                    detail="Evaluation result is unavailable", code=500
+                )
             return EvaluationResponse(
                 status="completed",
                 result=Evaluation.model_validate(interview.evaluation),
@@ -183,7 +199,10 @@ class EvaluationService:
             )
         if interview.status in ("evaluating", "evaluation_failed"):
             return EvaluationResponse(
-                status="failed", result=None, error_code="evaluation_failed", can_retry=True
+                status="failed",
+                result=None,
+                error_code="evaluation_failed",
+                can_retry=True,
             )
         return EvaluationResponse(
             status="not_ready", result=None, error_code=None, can_retry=False
@@ -197,7 +216,10 @@ class EvaluationService:
         rows = (
             await session.execute(
                 sa.select(InterviewAnswer, InterviewQuestion)
-                .join(InterviewQuestion, InterviewAnswer.question_id == InterviewQuestion.id)
+                .join(
+                    InterviewQuestion,
+                    InterviewAnswer.question_id == InterviewQuestion.id,
+                )
                 .where(InterviewAnswer.interview_id == interview.id)
                 .order_by(InterviewQuestion.ordinal)
             )
@@ -236,10 +258,12 @@ class EvaluationService:
                 if answer.bank_question_id is not None
             ),
         )
-        if len(signals) != len(pack.topics) or {signal.topic_id for signal in signals} != {
-            topic.id for topic in pack.topics
-        }:
-            raise ValueError("Frozen signal snapshot must include each rubric topic once")
+        if len(signals) != len(pack.topics) or {
+            signal.topic_id for signal in signals
+        } != {topic.id for topic in pack.topics}:
+            raise ValueError(
+                "Frozen signal snapshot must include each rubric topic once"
+            )
         for signal in signals:
             InterviewPolicy().validate_signal(signal, snapshot)
         return _FrozenInput(pack=pack, signals=signals, answers=answers)
@@ -255,7 +279,9 @@ class EvaluationService:
                 }
                 for topic in frozen.pack.topics
             ],
-            "frozen_signals": [signal.model_dump(mode="json") for signal in frozen.signals],
+            "frozen_signals": [
+                signal.model_dump(mode="json") for signal in frozen.signals
+            ],
             "questions_and_answers": [
                 {
                     "answer_id": str(answer.id),
@@ -288,7 +314,9 @@ class EvaluationService:
                     return self._validate(proposal, frozen)
                 except (ValidationError, ValueError) as exc:
                     if attempt:
-                        raise ValueError("Evaluation model returned invalid evidence") from exc
+                        raise ValueError(
+                            "Evaluation model returned invalid evidence"
+                        ) from exc
                     correction = (
                         f"\nThe previous proposal was rejected: {exc}. "
                         "Return the required JSON only. rubric_scores MUST include "
@@ -332,14 +360,18 @@ class EvaluationService:
                 if not claim.text.strip():
                     raise ValueError("Evaluation claim cannot be blank")
                 valid_ids(claim.answer_ids)
-                target.append(EvaluationClaim(text=claim.text, answer_ids=claim.answer_ids))
+                target.append(
+                    EvaluationClaim(text=claim.text, answer_ids=claim.answer_ids)
+                )
 
         rubric_scores: list[RubricScore] = []
         for topic in topics:
             proposed = scores[topic.id]
             if signals[topic.id].status != "assessed":
                 if proposed.score != 0 or proposed.answer_ids:
-                    raise ValueError("An unassessed topic cannot claim demonstrated points")
+                    raise ValueError(
+                        "An unassessed topic cannot claim demonstrated points"
+                    )
                 score = 0
                 cited: list[UUID] = []
             else:

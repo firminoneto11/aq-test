@@ -2,11 +2,11 @@ from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
-from argon2 import PasswordHasher
 import jwt
-import sqlalchemy as sa
-from httpx import AsyncClient
 import pytest
+import sqlalchemy as sa
+from argon2 import PasswordHasher
+from httpx import AsyncClient
 
 from app.exceptions import GenericException
 from app.ports import PasswordPort, SqlDBClientPort
@@ -14,11 +14,10 @@ from app.usecases.auth import AuthUseCase
 from conf import settings
 from domain.models import User
 from infra.passwords import PasswordAdapter
+
 if TYPE_CHECKING:
     from entrypoints.api.http.fastapi_.factory import ASGIFactory
     from entrypoints.api.http.fastapi_.types_ import AsgiApp
-
-
 
 
 async def _provision(
@@ -93,7 +92,10 @@ async def test_expired_invalid_and_disabled_credentials_cannot_read_user(
     try:
         cases = (
             ({**claims, "exp": now - timedelta(minutes=1)}, "Token has expired"),
-            ({key: val for key, val in claims.items() if key != "sub"}, "Token missing claim"),
+            (
+                {key: val for key, val in claims.items() if key != "sub"},
+                "Token missing claim",
+            ),
             ({**claims, "aud": "another-app"}, "Invalid token"),
             ({**claims, "sub": str(uuid4())}, "Invalid token"),
         )
@@ -131,7 +133,10 @@ async def test_signup_rejects_duplicate_email_and_invalid_password_without_repla
 ) -> None:
     _, app = asgi_config
     service = AuthUseCase(
-        db, app.state.passwords, settings.JWT_SECRET, "HS256",
+        db,
+        app.state.passwords,
+        settings.JWT_SECRET,
+        "HS256",
     )
     email = f"account-{uuid4()}@example.com"
     original_password = "correct-horse-battery-staple"
@@ -147,7 +152,9 @@ async def test_signup_rejects_duplicate_email_and_invalid_password_without_repla
             await service.login(email, "a-different-valid-password")
         assert rejected.value.code == 401
         async with db.begin_session() as session:
-            users = (await session.scalars(sa.select(User).where(User.email == email))).all()
+            users = (
+                await session.scalars(sa.select(User).where(User.email == email))
+            ).all()
             assert len(users) == 1 and users[0].id == first.id
     finally:
         await _remove(db, first.id)
@@ -159,7 +166,9 @@ async def test_successful_login_upgrades_legacy_argon2_hash(
 ) -> None:
     _, app = asgi_config
     password = "correct-horse-battery-staple"
-    old_hash = PasswordHasher(time_cost=1, memory_cost=1024, parallelism=1).hash(password)
+    old_hash = PasswordHasher(time_cost=1, memory_cost=1024, parallelism=1).hash(
+        password
+    )
     email = f"old-hash-{uuid4()}@example.com"
     async with db.begin_session() as session:
         user = User(email=email, password_hash=old_hash)
@@ -189,11 +198,17 @@ async def test_signed_token_with_invalid_subject_or_changed_email_is_denied(
     try:
         now = datetime.now(UTC)
         claims = {
-            "sub": str(created.id), "email": email, "iat": now,
-            "exp": now + timedelta(hours=1), "iss": "aq-interviewer",
+            "sub": str(created.id),
+            "email": email,
+            "iat": now,
+            "exp": now + timedelta(hours=1),
+            "iss": "aq-interviewer",
             "aud": "aq-interviewer-api",
         }
-        for wrong in ({**claims, "sub": "not-a-uuid"}, {**claims, "email": "other@example.com"}):
+        for wrong in (
+            {**claims, "sub": "not-a-uuid"},
+            {**claims, "email": "other@example.com"},
+        ):
             token = jwt.encode(wrong, settings.JWT_SECRET, algorithm="HS256")
             with pytest.raises(GenericException) as rejected:
                 await service.authenticate(token)

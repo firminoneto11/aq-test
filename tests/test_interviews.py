@@ -3,8 +3,8 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 from uuid import UUID, uuid4
 
-import sqlalchemy as sa
 import pytest
+import sqlalchemy as sa
 
 from app.exceptions import GenericException
 from app.job_packs import seed_jobs
@@ -40,7 +40,10 @@ class ScenarioLLM:
             answers = payload["questions_and_answers"]
             return {
                 "strengths": [
-                    {"text": "Explained an API trade-off", "answer_ids": [answers[2]["answer_id"]]}
+                    {
+                        "text": "Explained an API trade-off",
+                        "answer_ids": [answers[2]["answer_id"]],
+                    }
                 ],
                 "concerns": [],
                 "rubric_scores": [
@@ -105,10 +108,14 @@ async def remove_interview(
         interview.answerable_question_id = None
         await session.flush()
         await session.execute(
-            sa.delete(TranscriptEntry).where(TranscriptEntry.interview_id == interview_id)
+            sa.delete(TranscriptEntry).where(
+                TranscriptEntry.interview_id == interview_id
+            )
         )
         await session.execute(
-            sa.delete(InterviewDecision).where(InterviewDecision.interview_id == interview_id)
+            sa.delete(InterviewDecision).where(
+                InterviewDecision.interview_id == interview_id
+            )
         )
         followups = (
             await session.scalars(
@@ -123,16 +130,22 @@ async def remove_interview(
         for question_id in followups:
             # A later follow-up may cite this follow-up's answer as its source.
             await session.execute(
-                sa.delete(InterviewAnswer).where(InterviewAnswer.question_id == question_id)
+                sa.delete(InterviewAnswer).where(
+                    InterviewAnswer.question_id == question_id
+                )
             )
             await session.execute(
                 sa.delete(InterviewQuestion).where(InterviewQuestion.id == question_id)
             )
         await session.execute(
-            sa.delete(InterviewAnswer).where(InterviewAnswer.interview_id == interview_id)
+            sa.delete(InterviewAnswer).where(
+                InterviewAnswer.interview_id == interview_id
+            )
         )
         await session.execute(
-            sa.delete(InterviewQuestion).where(InterviewQuestion.interview_id == interview_id)
+            sa.delete(InterviewQuestion).where(
+                InterviewQuestion.interview_id == interview_id
+            )
         )
         await session.execute(sa.delete(Interview).where(Interview.id == interview_id))
         if remove_user:
@@ -203,7 +216,9 @@ async def test_role_grounded_six_turns_persist_and_evaluate(
         assert final_state.answered_count == 6
         assert final_state.follow_up_count == 2
         transcript = await service.get_transcript(user.id, state.id)
-        assert [question.ordinal for question in transcript.questions] == list(range(1, 7))
+        assert [question.ordinal for question in transcript.questions] == list(
+            range(1, 7)
+        )
         for followup_ordinal in (2, 4):
             followup = transcript.questions[followup_ordinal - 1]
             assert followup.kind == "follow_up"

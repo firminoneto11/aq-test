@@ -1,9 +1,8 @@
 from dataclasses import replace
-
-from pydantic import ValidationError
 from uuid import uuid4
 
 import pytest
+from pydantic import ValidationError
 
 from app.job_packs import SAMPLE_JOBS
 from domain.interviews import (
@@ -17,9 +16,7 @@ from domain.interviews import (
 )
 
 
-def _snapshot(
-    topics: list[int], assessed: set[int] | None = None
-) -> InterviewSnapshot:
+def _snapshot(topics: list[int], assessed: set[int] | None = None) -> InterviewSnapshot:
     pack = SAMPLE_JOBS[0].pack
     answers = tuple(
         AnsweredQuestion(
@@ -82,7 +79,9 @@ def test_six_question_schedule_and_assessed_stop():
             assert decision.source_answer_id == snapshot.answers[count - 1].answer_id
         else:
             assert decision.eligible_bank_ids
-    assert policy.next_step(_snapshot(topic_sequence)).reason_code == "coverage_complete"
+    assert (
+        policy.next_step(_snapshot(topic_sequence)).reason_code == "coverage_complete"
+    )
 
 
 def test_extra_probes_target_missing_evidence_not_poor_score():
@@ -121,7 +120,9 @@ def test_signal_evidence_must_belong_to_the_same_topic_and_quote_the_answer():
         topic_id="ownership",
         status="assessed",
         skill_ids=[],
-        evidence=[SignalEvidence(answer_id=snapshot.answers[0].answer_id, quote="invented")],
+        evidence=[
+            SignalEvidence(answer_id=snapshot.answers[0].answer_id, quote="invented")
+        ],
     )
     with pytest.raises(ValueError):
         InterviewPolicy().validate_signal(wrong_quote, snapshot)
@@ -179,7 +180,9 @@ def test_coverage_gaps_rotate_instead_of_reprobing_one_topic() -> None:
     assert next_step.source_answer_id == after_one_extra_probe.answers[5].answer_id
 
 
-def test_policy_rejects_unsupported_skills_duplicate_answers_and_bank_exhaustion() -> None:
+def test_policy_rejects_unsupported_skills_duplicate_answers_and_bank_exhaustion() -> (
+    None
+):
     policy = InterviewPolicy()
     snapshot = _snapshot([0, 0, 1, 1, 2, 3])
     signal = RubricSignal(
@@ -217,8 +220,12 @@ def test_policy_rejects_unsupported_skills_duplicate_answers_and_bank_exhaustion
     with pytest.raises(ValueError, match="No unused bank"):
         policy.next_step(exhausted)
 
+
 def test_only_a_standalone_spoken_command_controls_the_session():
     assert classify_control("Please stop the interview?") == "stop"
     assert classify_control("Can you repeat the question?") == "repeat"
-    assert classify_control('My manager said "stop the interview" during the incident.') == "answer"
+    assert (
+        classify_control('My manager said "stop the interview" during the incident.')
+        == "answer"
+    )
     assert classify_control("  ...  ") == "empty"

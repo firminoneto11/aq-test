@@ -19,9 +19,12 @@ def test_disk_template_renders_nested_path_with_escaping_and_empty_none(
     engine = TemplateEngineAdapter(templates_path=tmp_path, base_path="mail")
 
     assert engine.get_template_text("onboarding/welcome.html") == template_text
-    assert engine.render(
-        "onboarding/welcome.html", person="<script>alert('x')</script>", note=None
-    ) == "Hello &lt;script&gt;alert(&#39;x&#39;)&lt;/script&gt;!\nNote: "
+    assert (
+        engine.render(
+            "onboarding/welcome.html", person="<script>alert('x')</script>", note=None
+        )
+        == "Hello &lt;script&gt;alert(&#39;x&#39;)&lt;/script&gt;!\nNote: "
+    )
 
 
 @pytest.mark.parametrize("template_name", ["missing.html", "onboarding/missing.html"])
@@ -47,14 +50,19 @@ def test_dynamic_template_tags_represent_inputs_and_rendered_output(
         "{{ optional }}"
     )
     assert set(engine.extract_tags_from_string(template_text)) == {
-        "person", "items", "optional"
+        "person",
+        "items",
+        "optional",
     }
-    assert engine.render_string(
-        template_text,
-        person={"name": "<Sam>"},
-        items=["<one>", "two"],
-        optional=None,
-    ) == "Hello &lt;Sam&gt;: &lt;one&gt;, two"
+    assert (
+        engine.render_string(
+            template_text,
+            person={"name": "<Sam>"},
+            items=["<one>", "two"],
+            optional=None,
+        )
+        == "Hello &lt;Sam&gt;: &lt;one&gt;, two"
+    )
 
 
 @pytest.mark.parametrize("template_text", [None, "", "{% if person %}hello"])
@@ -66,7 +74,9 @@ def test_invalid_template_syntax_is_rejected(
     assert engine.is_valid("{% if person %}Hello {{ person }}{% endif %}")
 
 
-def test_console_tracker_reports_exception_and_context_to_stderr(capsys: pytest.CaptureFixture[str]) -> None:
+def test_console_tracker_reports_exception_and_context_to_stderr(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     tracker = ErrorTrackingAdapter("console")
     tracker.init()
     try:
@@ -114,7 +124,9 @@ def test_sentry_tracker_ignores_inactive_sdk_and_sends_exception_with_context_wh
     scope.__exit__.assert_called_once()
 
 
-@pytest.mark.parametrize("failure_site", ["get_client", "new_scope", "capture_exception"])
+@pytest.mark.parametrize(
+    "failure_site", ["get_client", "new_scope", "capture_exception"]
+)
 def test_sentry_failure_does_not_replace_caller_exception(
     monkeypatch: pytest.MonkeyPatch, failure_site: str
 ) -> None:

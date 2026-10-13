@@ -7,12 +7,12 @@ ENV PYTHONDONTWRITEBYTECODE=1
 
 WORKDIR /app
 
-COPY pyproject.toml .
-COPY uv.lock .
+COPY pyproject.toml uv.lock README.md ./
+RUN uv sync --frozen --no-dev --no-install-project
+COPY . .
 RUN uv sync --frozen --no-dev
 ENV PATH="/app/.venv/bin:$PATH"
-
-COPY . .
+RUN python -m livekit.agents download-files
 RUN chmod +x /app/scripts/startup.sh
 
 CMD ["/app/scripts/startup.sh"]

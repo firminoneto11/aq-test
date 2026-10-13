@@ -6,9 +6,9 @@ import typing
 import psutil
 from gunicorn.app.base import BaseApplication
 from gunicorn.util import import_app
+from uvicorn_worker import UvicornWorker
 
-if typing.TYPE_CHECKING:
-    from uvicorn_worker import UvicornWorker
+from conf import settings
 
 
 class GunicornApp(BaseApplication):
@@ -60,7 +60,10 @@ class GunicornApp(BaseApplication):
         physical_cores = psutil.cpu_count(logical=False)
         logical_cores = psutil.cpu_count()
 
-        gunicorn_workers = physical_cores or logical_cores
+        if settings.HTTP_WORKERS is not None and settings.HTTP_WORKERS < 1:
+            raise ValueError("HTTP_WORKERS must be positive")
+
+        gunicorn_workers = settings.HTTP_WORKERS or physical_cores or logical_cores
 
         if gunicorn_workers is None:
             self._echo("Could not determine CPU core count, defaulting to 1")

@@ -1,0 +1,64 @@
+name: aq-interviewer
+
+x-backend: &backend
+  image: aq-interviewer-backend:local
+  build: .
+  env_file: ${BACKEND_ENV_FILE:-.env}
+  environment:
+    DB_DRIVER: asyncpg
+    DB_SERVER: ${DB_SERVER:?Set DB_SERVER for the container database}
+    JWT_SECRET: ${JWT_SECRET:?Set a unique JWT_SECRET of at least 32 bytes}
+
+services:
+  db:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-interviewer}
+      POSTGRES_DB: ${POSTGRES_DB:-interviewer}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    ports:
+      - "127.0.0.1:${POSTGRES_HOST_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql
+
+  migrate:
+    <<: *backend
+    depends_on:
+      db:
+        condition: service_healthy
+    command: ["sh", "-c", "python -m alembic upgrade head && python manage.py seed-jobs"]
+    restart: "no"
+
+  api:
+    <<: *backend
+    environment:
+      DB_DRIVER: asyncpg
+      DB_SERVER: ${DB_SERVER:?Set DB_SERVER for the container database}
+      JWT_SECRET: ${JWT_SECRET:?Set a unique JWT_SECRET of at least 32 bytes}
+      HOST: 0.0.0.0
+      PORT: "8000"
+      HTTP_WORKERS: "2"
+      ALLOWED_ORIGINS: '${ALLOWED_ORIGINS:-["http://localhost:5173"]}'
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    ports:
+      - "127.0.0.1:${API_HOST_PORT:-8000}:8000"
+    command: ["/app/scripts/startup.sh"]
+    restart: unless-stopped
+
+  agent:
+    <<: *backend
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    command: ["python", "-m", "entrypoints.voice.agent", "start"]
+    restart: unless-stopped
+
+volumes:
+  pgdata:

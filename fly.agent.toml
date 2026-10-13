@@ -1,0 +1,24 @@
+app = "aq-interviewer-fn11-agent"
+primary_region = "iad"
+kill_signal = "SIGTERM"
+kill_timeout = 120
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  ENVIRONMENT = "production"
+  DB_DRIVER = "asyncpg"
+
+[processes]
+  app = "python -m entrypoints.voice.agent start"
+
+[[restart]]
+  policy = "always"
+  processes = ["app"]
+
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 2
+  memory = "2gb"
+  processes = ["app"]
